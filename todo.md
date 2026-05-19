@@ -91,3 +91,4 @@
 - [x] Página de edição de perfil do usuário (/profile) com seletor de persona
 - [x] Bloco de usuário na sidebar clicável → navega para /profile
 - [x] Botão "Sair da conta" separado na sidebar com ícone e label
+- [x] Script de seed com sinistros, eventos, scores de fraude e análises preditivas
