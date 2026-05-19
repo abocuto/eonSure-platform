@@ -1,0 +1,41 @@
+{
+  "build_command": "pnpm run build",
+  "capabilities": [
+    "server",
+    "db",
+    "user"
+  ],
+  "dev_command": "pnpm run dev",
+  "env_vars": {
+    "DATABASE_URL": "mysql://3V5qfRjwqSJ6VPo.root:jM2NHB8S4XO3jO0LSo4v@gateway06.us-east-1.prod.aws.tidbcloud.com:4000/KVaPgcjTBeBLXi63H9ZdTJ?ssl={\"rejectUnauthorized\":true}"
+  },
+  "experiments": null,
+  "git_remote": {
+    "repo_url": "s3://vida-prod-gitrepo/webdev-git/310419663028444201/KVaPgcjTBeBLXi63H9ZdTJ",
+    "access_key_id": "ASIAZV3A2ECZBAXEQP55",
+    "secret_access_key": "/vt/EPNxM7csBo/K/nbQ4uqTQ1WyKzcrlZgmCgWa",
+    "session_token": "IQoJb3JpZ2luX2VjEBMaCXVzLWVhc3QtMSJHMEUCICewDLv+mdCgG74QSjW7rxqQmbr6tRrZFrpwJeLt/H0HAiEA8ZGV3yUvoky7aVq8HWWoEaqa8+TrLCiWklGjR2NEMKoq/wMI3P//////////ARAEGgw2NjUzODYwOTg4NjYiDP3Nj2faUDFiI/A/YSrTA/ll26X9oCxGbwziAzV4/l5FcZEDxQsK/eIrPRXgzaSM6F1qPSG0OdrrS8QWMklztda2xo4AGdRMG2dB/8j+SzluV/XpK7CURM3Sv/i1+K1wvvaIeuaRNomF1k9Hgigtt+7+ZK9bh+aONa5+TGu1vl1vA4ZjXUpHzfrT93/JLHKgOrUzOBxPyljM4cDZ0JJRp5x1EMMOsPl3BSFPohPQ653thtfxsGYtrJaUiNNF2HubHR/YpsmsTkwCGTrpsmulDs4SfLr8VWL3CoUm3FABXYIUOFkgsTHXAn42dtY6pjlo44wDOCI+EdpowuvHsigXPlEfiLb51F6AjD7DIvNN0qpmts5++760Dq5o4auAMINeZVfzc0QdQsu1gknEd7Tq3myP0F5y3zBNvV6UBxoVxyw+k0udthSu5CIbUJPZamTB7goaLK4AngY6ohZ8W0A3c7CSnypRq2fQki72xHDLRc+Q8Ig8PltNMl7PVGZUs/Ui5XWBeqZQvo/lcKpNip4BIskZ+VuRr8Qj2Xy7//Cpq971XjBp3NA8GQapycURntZrK30d3PBwCs6Vn6L+YwgSa1haEhEwwDgKWo6U8Kz70NSJFiZtcg7T3sldMQ+2tXHto+loMKTmstAGOp0Bj9d0w1wKj4aU7L9smWoVWAY0Jc91iglEjPFyYXZpVDGFg2xnSDotCqYRRosR+/P9WLuK+ewYS7t/Ltkr/3a014TdtmR2KKesUzmsVHacnsJ+Ua7F1NwktsdFmF+DFj5PdNXMGwciFC5GbDsZ+9zUJlQTZL7owaYeUp46BC9VZ7++uImwreKJBVj1AWTwveyLnvArUvarmaJSpORPTg==",
+    "expiration": "2026-05-20T06:59:48.000Z"
+  },
+  "name": "eonSure-platform",
+  "path": "/home/ubuntu/eonSure-platform",
+  "port": 3000,
+  "secrets": {
+    "BUILT_IN_FORGE_API_KEY": "aGeGAPPtm6a3EWSUNhSXBd",
+    "BUILT_IN_FORGE_API_URL": "https://forge.manus.ai",
+    "JWT_SECRET": "mUTnSfNoaeUQ4Zwx6GLFAC",
+    "OAUTH_SERVER_URL": "https://api.manus.im",
+    "OWNER_NAME": "Rodrigo Lins",
+    "OWNER_OPEN_ID": "fgzMaUSxYudh2ned9jKm7G",
+    "VITE_ANALYTICS_ENDPOINT": "https://manus-analytics.com",
+    "VITE_ANALYTICS_WEBSITE_ID": "aa4b2a99-f6bb-437b-8691-81e52a5a4eac",
+    "VITE_APP_ID": "KVaPgcjTBeBLXi63H9ZdTJ",
+    "VITE_APP_LOGO": "",
+    "VITE_APP_TITLE": "EonSure - InsurTech Platform",
+    "VITE_FRONTEND_FORGE_API_KEY": "KgQ3o5oEu9zJTh8qb4yR6d",
+    "VITE_FRONTEND_FORGE_API_URL": "https://forge.manus.ai",
+    "VITE_OAUTH_PORTAL_URL": "https://manus.im"
+  },
+  "template_id": "web-db-user",
+  "test_command": "pnpm test"
+}
