@@ -84,3 +84,10 @@
 - [x] Testes unitários para routers de claims
 - [x] Testes unitários para Motor de Regras
 - [x] Testes unitários para score de fraude
+
+## Melhorias e Bugfixes
+- [x] Corrigir nomes de colunas SQL raw (snake_case → camelCase)
+- [x] Corrigir Link com <a> aninhado no Dashboard e EonLayout
+- [x] Página de edição de perfil do usuário (/profile) com seletor de persona
+- [x] Bloco de usuário na sidebar clicável → navega para /profile
+- [x] Botão "Sair da conta" separado na sidebar com ícone e label

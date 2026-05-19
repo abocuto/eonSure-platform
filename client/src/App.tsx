@@ -14,6 +14,7 @@ import FraudDetection from "./pages/FraudDetection";
 import Analytics from "./pages/Analytics";
 import Csat from "./pages/Csat";
 import Subscriptions from "./pages/Subscriptions";
+import Profile from "./pages/Profile";
 import EonLayout from "./components/EonLayout";
 
 function Router() {
@@ -67,6 +68,7 @@ function Router() {
           <Subscriptions />
         </EonLayout>
       </Route>
+      <Route path="/profile" component={Profile} />
       <Route path="/404" component={NotFound} />
       <Route component={NotFound} />
     </Switch>

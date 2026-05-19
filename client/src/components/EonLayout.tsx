@@ -145,25 +145,29 @@ export default function EonLayout({ children }: EonLayoutProps) {
 
       {/* User / Logout */}
       <div className="px-3 py-3 border-t border-sidebar-border">
-        <div className="flex items-center gap-3 px-3 py-2 rounded-lg">
+        <Link
+          href="/profile"
+          className="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-sidebar-accent transition-colors cursor-pointer group"
+        >
           <Avatar className="w-8 h-8">
             <AvatarFallback className="bg-primary/20 text-primary text-xs font-bold">
               {(user?.name ?? "U").slice(0, 2).toUpperCase()}
             </AvatarFallback>
           </Avatar>
           <div className="flex-1 min-w-0">
-            <p className="text-xs font-medium text-sidebar-foreground truncate">{user?.name ?? "Usuário"}</p>
+            <p className="text-xs font-medium text-sidebar-foreground truncate group-hover:text-primary transition-colors">{user?.name ?? "Usuário"}</p>
             <p className="text-xs text-muted-foreground truncate">{user?.email ?? ""}</p>
           </div>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="w-7 h-7 text-muted-foreground hover:text-destructive flex-shrink-0"
-            onClick={logout}
-          >
-            <LogOut className="w-3.5 h-3.5" />
-          </Button>
-        </div>
+        </Link>
+        <Button
+          variant="ghost"
+          size="sm"
+          className="w-full mt-1 text-xs text-muted-foreground hover:text-destructive hover:bg-destructive/10 gap-2 justify-start px-3"
+          onClick={logout}
+        >
+          <LogOut className="w-3.5 h-3.5" />
+          Sair da conta
+        </Button>
       </div>
     </div>
   );
