@@ -116,20 +116,20 @@ export default function EonLayout({ children }: EonLayoutProps) {
           const Icon = item.icon;
           const isActive = location === item.href || location.startsWith(item.href + "/");
           return (
-            <Link key={item.href} href={item.href}>
-              <a
-                className={cn(
-                  "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-150",
-                  isActive
-                    ? "bg-primary text-primary-foreground shadow-sm"
-                    : "text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-foreground"
-                )}
-                onClick={() => mobile && setSidebarOpen(false)}
-              >
-                <Icon className="w-4 h-4 flex-shrink-0" />
-                <span className="flex-1">{item.label}</span>
-                {isActive && <ChevronRight className="w-3 h-3 opacity-60" />}
-              </a>
+            <Link
+              key={item.href}
+              href={item.href}
+              className={cn(
+                "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-150",
+                isActive
+                  ? "bg-primary text-primary-foreground shadow-sm"
+                  : "text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-foreground"
+              )}
+              onClick={() => mobile && setSidebarOpen(false)}
+            >
+              <Icon className="w-4 h-4 flex-shrink-0" />
+              <span className="flex-1">{item.label}</span>
+              {isActive && <ChevronRight className="w-3 h-3 opacity-60" />}
             </Link>
           );
         })}

@@ -341,7 +341,7 @@ export async function getKpisByTenant(tenantId: number) {
   const [openClaims] = await db
     .select({ count: count() })
     .from(claims)
-    .where(and(eq(claims.tenantId, tenantId), sql`status NOT IN ('closed', 'rejected')`));
+    .where(and(eq(claims.tenantId, tenantId), sql`${claims.status} NOT IN ('closed', 'rejected')`));
 
   const [closedClaims] = await db
     .select({ count: count() })
@@ -350,24 +350,24 @@ export async function getKpisByTenant(tenantId: number) {
 
   const [fraudStats] = await db
     .select({
-      greenCount: sql<number>`SUM(CASE WHEN fraud_risk = 'green' THEN 1 ELSE 0 END)`,
-      yellowCount: sql<number>`SUM(CASE WHEN fraud_risk = 'yellow' THEN 1 ELSE 0 END)`,
-      redCount: sql<number>`SUM(CASE WHEN fraud_risk = 'red' THEN 1 ELSE 0 END)`,
+      greenCount: sql<number>`SUM(CASE WHEN fraudRisk = 'green' THEN 1 ELSE 0 END)`,
+      yellowCount: sql<number>`SUM(CASE WHEN fraudRisk = 'yellow' THEN 1 ELSE 0 END)`,
+      redCount: sql<number>`SUM(CASE WHEN fraudRisk = 'red' THEN 1 ELSE 0 END)`,
     })
     .from(claims)
     .where(eq(claims.tenantId, tenantId));
 
   const [avgResolution] = await db
     .select({
-      avgDays: sql<number>`AVG(DATEDIFF(resolved_at, created_at))`,
+      avgDays: sql<number>`AVG(DATEDIFF(resolvedAt, createdAt))`,
     })
     .from(claims)
     .where(and(eq(claims.tenantId, tenantId), eq(claims.status, "closed")));
 
   const [financialStats] = await db
     .select({
-      totalClaimed: sql<number>`SUM(CAST(claimed_amount AS DECIMAL(15,2)))`,
-      totalApproved: sql<number>`SUM(CAST(approved_amount AS DECIMAL(15,2)))`,
+      totalClaimed: sql<number>`SUM(CAST(claimedAmount AS DECIMAL(15,2)))`,
+      totalApproved: sql<number>`SUM(CAST(approvedAmount AS DECIMAL(15,2)))`,
     })
     .from(claims)
     .where(eq(claims.tenantId, tenantId));

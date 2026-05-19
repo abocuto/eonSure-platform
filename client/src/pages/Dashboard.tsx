@@ -251,22 +251,24 @@ export default function Dashboard() {
             ))
           ) : claims && claims.length > 0 ? (
             claims.map((claim) => (
-              <Link key={claim.id} href={`/claims/${claim.id}`}>
-                <a className="flex items-center gap-4 px-5 py-3 hover:bg-accent/30 transition-colors cursor-pointer">
-                  <span className="text-xs font-mono text-muted-foreground w-32 flex-shrink-0 truncate">
-                    {claim.claimNumber}
-                  </span>
-                  <span className="text-sm text-foreground flex-1 truncate">
-                    {claim.insuredName ?? "—"}
-                  </span>
-                  <StatusPill status={claim.status} size="sm" />
-                  {claim.fraudRisk && (
-                    <RiskBadge level={claim.fraudRisk as "green" | "yellow" | "red"} size="sm" />
-                  )}
-                  <span className="text-xs text-muted-foreground hidden sm:block flex-shrink-0">
-                    {new Date(claim.createdAt).toLocaleDateString("pt-BR")}
-                  </span>
-                </a>
+              <Link
+                key={claim.id}
+                href={`/claims/${claim.id}`}
+                className="flex items-center gap-4 px-5 py-3 hover:bg-accent/30 transition-colors cursor-pointer"
+              >
+                <span className="text-xs font-mono text-muted-foreground w-32 flex-shrink-0 truncate">
+                  {claim.claimNumber}
+                </span>
+                <span className="text-sm text-foreground flex-1 truncate">
+                  {claim.insuredName ?? "—"}
+                </span>
+                <StatusPill status={claim.status} size="sm" />
+                {claim.fraudRisk && (
+                  <RiskBadge level={claim.fraudRisk as "green" | "yellow" | "red"} size="sm" />
+                )}
+                <span className="text-xs text-muted-foreground hidden sm:block flex-shrink-0">
+                  {new Date(claim.createdAt).toLocaleDateString("pt-BR")}
+                </span>
               </Link>
             ))
           ) : (
@@ -293,13 +295,15 @@ export default function Dashboard() {
         ].map((action) => {
           const Icon = action.icon;
           return (
-            <Link key={action.href} href={action.href}>
-              <a className="flex flex-col items-center gap-2 p-4 rounded-xl border border-border bg-card hover:border-primary/30 hover:bg-accent/30 transition-all text-center group">
-                <div className="w-9 h-9 rounded-lg bg-accent flex items-center justify-center group-hover:bg-primary/10 transition-colors">
-                  <Icon className={cn("w-4 h-4", action.color)} />
-                </div>
-                <span className="text-xs font-medium text-foreground">{action.label}</span>
-              </a>
+            <Link
+              key={action.href}
+              href={action.href}
+              className="flex flex-col items-center gap-2 p-4 rounded-xl border border-border bg-card hover:border-primary/30 hover:bg-accent/30 transition-all text-center group"
+            >
+              <div className="w-9 h-9 rounded-lg bg-accent flex items-center justify-center group-hover:bg-primary/10 transition-colors">
+                <Icon className={cn("w-4 h-4", action.color)} />
+              </div>
+              <span className="text-xs font-medium text-foreground">{action.label}</span>
             </Link>
           );
         })}
