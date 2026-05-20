@@ -303,15 +303,27 @@ class SDKServer {
       }
     }
 
-    if (!user) {
+        if (!user) {
       throw ForbiddenError("User not found");
     }
-
-    await db.upsertUser({
+    // Auto-associate user to demo tenant if tenantId is null
+    const updatePayload: Parameters<typeof db.upsertUser>[0] = {
       openId: user.openId,
       lastSignedIn: signedInAt,
-    });
-
+    };
+    if (!user.tenantId) {
+      try {
+        const demoTenant = await db.getDemoTenant();
+        if (demoTenant) {
+          updatePayload.tenantId = demoTenant.id;
+          user = { ...user, tenantId: demoTenant.id };
+          console.log(`[Auth] Auto-associated user ${user.openId} to demo tenant #${demoTenant.id} (${demoTenant.name})`);
+        }
+      } catch (err) {
+        console.warn("[Auth] Could not auto-associate tenant:", err);
+      }
+    }
+    await db.upsertUser(updatePayload);
     return user;
   }
 }

@@ -95,3 +95,4 @@
 - [x] Botão de alternância light/dark no header do EonLayout
 - [x] Painel de configurações white-label por tenant (cores, logo, nome)
 - [x] Aplicar branding white-label salvo (brandName, logoUrl, primaryColor) no EonLayout em runtime
+- [x] Associar automaticamente usuário ao tenant de demonstração (id=1) quando tenantId for nulo no login

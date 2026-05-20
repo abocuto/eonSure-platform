@@ -66,6 +66,34 @@ export async function getTenants() {
   return db.select().from(tenants).orderBy(desc(tenants.createdAt));
 }
 
+export async function getFirstTenant() {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(tenants).orderBy(tenants.id).limit(1);
+  return result[0];
+}
+
+/**
+ * Returns the demo tenant (slug = 'seguradora-atlantica' or id = 1).
+ * Used for auto-associating new users that have no tenant yet.
+ */
+export async function getDemoTenant() {
+  const db = await getDb();
+  if (!db) return undefined;
+  // Try by known demo slug first, fall back to id=1, then first tenant
+  const bySlug = await db
+    .select()
+    .from(tenants)
+    .where(eq(tenants.slug, "seguradora-atlantica"))
+    .limit(1);
+  if (bySlug[0]) return bySlug[0];
+  const byId = await db.select().from(tenants).where(eq(tenants.id, 1)).limit(1);
+  if (byId[0]) return byId[0];
+  // Last resort: first available tenant
+  const first = await db.select().from(tenants).orderBy(tenants.id).limit(1);
+  return first[0];
+}
+
 export async function getTenantById(id: number) {
   const db = await getDb();
   if (!db) return undefined;
