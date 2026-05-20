@@ -10,10 +10,22 @@
 
 import OpenAI from "openai";
 
-const client = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-  baseURL: process.env.OPENAI_BASE_URL,
-});
+// Lazy initialization — avoids crash at startup when OPENAI_API_KEY is not set.
+// Falls back to heuristic scoring in all methods if client is unavailable.
+let _client: OpenAI | null = null;
+function getClient(): OpenAI | null {
+  if (_client) return _client;
+  if (!process.env.OPENAI_API_KEY) return null;
+  try {
+    _client = new OpenAI({
+      apiKey: process.env.OPENAI_API_KEY,
+      baseURL: process.env.OPENAI_BASE_URL,
+    });
+  } catch {
+    return null;
+  }
+  return _client;
+}
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 export interface FraudAnalysisInput {
@@ -77,6 +89,12 @@ Retorne APENAS um JSON válido no seguinte formato (sem markdown, sem texto adic
 
 Considere: valor do sinistro vs. média do setor, coerência da descrição, padrões suspeitos, data do incidente, tipo de cobertura.`;
 
+  const client = getClient();
+  if (!client) {
+    console.warn("[AIService] No OpenAI API key configured, using heuristic fallback.");
+    return heuristicFraudAnalysis(input);
+  }
+
   try {
     const response = await client.chat.completions.create({
       model: "gpt-4.1-mini",
@@ -130,6 +148,12 @@ Retorne APENAS um JSON válido (sem markdown):
     ...
   ]
 }`;
+
+  const client = getClient();
+  if (!client) {
+    console.warn("[AIService] No OpenAI API key configured, using heuristic fallback.");
+    return heuristicPrediction(input);
+  }
 
   try {
     const response = await client.chat.completions.create({
