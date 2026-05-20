@@ -37,15 +37,24 @@ queryClient.getMutationCache().subscribe(event => {
   }
 });
 
+// Retrieve stored auth token for Authorization header fallback
+function getStoredToken(): string | null {
+  try { return localStorage.getItem("eon_auth_token"); } catch { return null; }
+}
+
 const trpcClient = trpc.createClient({
   links: [
     httpBatchLink({
       url: "/api/trpc",
       transformer: superjson,
       fetch(input, init) {
+        const token = getStoredToken();
+        const headers: Record<string, string> = {};
+        if (token) headers["Authorization"] = `Bearer ${token}`;
         return globalThis.fetch(input, {
           ...(init ?? {}),
           credentials: "include",
+          headers: { ...(init?.headers as Record<string, string> ?? {}), ...headers },
         });
       },
     }),

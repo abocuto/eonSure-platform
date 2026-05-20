@@ -30,9 +30,13 @@ interface ProtectedRouteProps {
 }
 
 export function ProtectedRoute({ path, children }: ProtectedRouteProps) {
-  const { user } = useAuth();
+  const { user, loading } = useAuth();
 
-  if (!user) return <Redirect to="/login" />;
+  // While auth is loading, render nothing to avoid premature redirect
+  if (loading) return null;
+
+  // Not authenticated — redirect to home
+  if (!user) return <Redirect to="/" />;
 
   const persona = user.persona as Persona;
   const allowed = ROUTE_PERSONAS[path];

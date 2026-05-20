@@ -2,7 +2,7 @@ import { useAuth } from "@/_core/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { getLoginUrl } from "@/const";
 import { useLocation } from "wouter";
-import { useEffect } from "react";
+import { useEffect, useCallback } from "react";
 import {
   Zap, Shield, BarChart3, GitBranch, Database, ShieldAlert,
   TrendingUp, CheckCircle2, ArrowRight, ChevronRight,
@@ -39,7 +39,7 @@ const STATS = [
 ];
 
 export default function Home() {
-  const { isAuthenticated, loading } = useAuth();
+  const { isAuthenticated, loading, refresh } = useAuth();
   const [, navigate] = useLocation();
 
   useEffect(() => {
@@ -47,6 +47,24 @@ export default function Home() {
       navigate("/dashboard");
     }
   }, [isAuthenticated, loading, navigate]);
+
+  // Demo login: fetch token via JSON API, store in localStorage for Authorization header
+  const handleDemoLogin = useCallback(async (persona: string) => {
+    try {
+      const res = await fetch(`/api/demo-login?persona=${persona}`, {
+        headers: { Accept: "application/json" },
+        credentials: "include",
+      });
+      const data = await res.json();
+      if (data.token) {
+        localStorage.setItem("eon_auth_token", data.token);
+        await refresh();
+        navigate("/dashboard");
+      }
+    } catch (err) {
+      console.error("Demo login failed", err);
+    }
+  }, [navigate, refresh]);
 
   return (
     <div className="min-h-screen bg-background overflow-x-hidden">
@@ -101,8 +119,8 @@ export default function Home() {
                 <ArrowRight className="w-5 h-5 ml-2" />
               </a>
             </Button>
-            <Button variant="outline" size="lg" className="border-border text-foreground hover:bg-accent px-8">
-              Ver Demonstração
+            <Button variant="outline" size="lg" className="border-border text-foreground hover:bg-accent px-8" onClick={() => handleDemoLogin("c-level")}>
+              Demo — Entrar como C-Level
             </Button>
           </div>
         </div>
@@ -205,6 +223,41 @@ export default function Home() {
               <ArrowRight className="w-5 h-5 ml-2" />
             </a>
           </Button>
+        </div>
+      </section>
+
+      {/* Demo Access Section */}
+      <section className="py-16 px-6 bg-card/30 border-y border-border">
+        <div className="max-w-4xl mx-auto text-center">
+          <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full border border-primary/30 bg-primary/5 text-primary text-xs font-medium mb-4">
+            <div className="w-1.5 h-1.5 rounded-full bg-primary" />
+            Acesso Demo — Ambiente de Demonstração
+          </div>
+          <h2 className="text-xl sm:text-2xl font-bold text-foreground mb-2">
+            Explore a plataforma por persona
+          </h2>
+          <p className="text-muted-foreground text-sm mb-8">
+            Cada persona possui acesso a módulos específicos. Escolha uma para explorar a experiência completa.
+          </p>
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+            {[
+              { persona: "c-level", label: "C-Level", desc: "Visão estratégica", icon: "👔" },
+              { persona: "gerente-sinistros", label: "Gerente", desc: "Gestão operacional", icon: "📋" },
+              { persona: "analista-fraude", label: "Analista Fraude", desc: "Detecção de fraudes", icon: "🔍" },
+              { persona: "cio", label: "CIO", desc: "Tecnologia e dados", icon: "⚙️" },
+              { persona: "perito", label: "Perito", desc: "Avaliação de sinistros", icon: "🔬" },
+            ].map(({ persona, label, desc, icon }) => (
+              <button
+                key={persona}
+                onClick={() => handleDemoLogin(persona)}
+                className="flex flex-col items-center gap-2 p-4 rounded-xl border border-border bg-card hover:border-primary/50 hover:bg-primary/5 transition-all group cursor-pointer w-full"
+              >
+                <span className="text-2xl">{icon}</span>
+                <span className="text-sm font-semibold text-foreground group-hover:text-primary transition-colors">{label}</span>
+                <span className="text-xs text-muted-foreground text-center">{desc}</span>
+              </button>
+            ))}
+          </div>
         </div>
       </section>
 
