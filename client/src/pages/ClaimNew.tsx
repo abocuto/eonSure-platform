@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { trpc } from "@/lib/trpc";
 import { useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
@@ -7,10 +7,15 @@ import { Card } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Badge } from "@/components/ui/badge";
 import { SectionHeader } from "@/components/EonComponents";
 import { toast } from "sonner";
-import { ClipboardList, ArrowLeft, Save } from "lucide-react";
+import {
+  ClipboardList, ArrowLeft, Save, Upload, X, FileText,
+  Image, Loader2, Zap,
+} from "lucide-react";
 import { Link } from "wouter";
+import { cn } from "@/lib/utils";
 
 const CLAIM_TYPES = [
   { value: "auto", label: "Automóvel" },
@@ -21,8 +26,21 @@ const CLAIM_TYPES = [
   { value: "other", label: "Outros" },
 ];
 
+const ACCEPTED_TYPES = ["image/jpeg", "image/png", "image/webp", "application/pdf"];
+const MAX_FILE_SIZE_MB = 10;
+
+interface UploadedFile {
+  name: string;
+  size: number;
+  type: string;
+  dataUrl: string;
+}
+
 export default function ClaimNew() {
   const [, navigate] = useLocation();
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([]);
+  const [isDragging, setIsDragging] = useState(false);
   const [form, setForm] = useState({
     insuredName: "",
     insuredDocument: "",
@@ -35,13 +53,55 @@ export default function ClaimNew() {
 
   const createClaim = trpc.claims.create.useMutation({
     onSuccess: (data) => {
-      toast.success(`Sinistro ${data.claimNumber} registrado com sucesso!`);
-      navigate("/claims");
+      toast.success(`Sinistro ${data.claimNumber} registrado! Pipeline de IA iniciado automaticamente.`, {
+        duration: 5000,
+      });
+      navigate(`/claims/${data.claimId}`);
     },
     onError: (err) => {
       toast.error(`Erro ao registrar sinistro: ${err.message}`);
     },
   });
+
+  const handleFileSelect = (files: FileList | null) => {
+    if (!files) return;
+    const newFiles: UploadedFile[] = [];
+
+    Array.from(files).forEach((file) => {
+      if (!ACCEPTED_TYPES.includes(file.type)) {
+        toast.error(`Tipo de arquivo não suportado: ${file.name}. Use PDF, JPG, PNG ou WebP.`);
+        return;
+      }
+      if (file.size > MAX_FILE_SIZE_MB * 1024 * 1024) {
+        toast.error(`Arquivo muito grande: ${file.name}. Máximo ${MAX_FILE_SIZE_MB}MB.`);
+        return;
+      }
+
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        newFiles.push({
+          name: file.name,
+          size: file.size,
+          type: file.type,
+          dataUrl: e.target?.result as string,
+        });
+        if (newFiles.length === Array.from(files).filter((f) => ACCEPTED_TYPES.includes(f.type)).length) {
+          setUploadedFiles((prev) => [...prev, ...newFiles]);
+        }
+      };
+      reader.readAsDataURL(file);
+    });
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+    handleFileSelect(e.dataTransfer.files);
+  };
+
+  const removeFile = (index: number) => {
+    setUploadedFiles((prev) => prev.filter((_, i) => i !== index));
+  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -49,7 +109,16 @@ export default function ClaimNew() {
       toast.error("Preencha os campos obrigatórios.");
       return;
     }
-    createClaim.mutate(form);
+    createClaim.mutate({
+      ...form,
+      attachmentUrls: uploadedFiles.map((f) => f.dataUrl),
+    });
+  };
+
+  const formatFileSize = (bytes: number) => {
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
   };
 
   return (
@@ -81,6 +150,15 @@ export default function ClaimNew() {
             {i < 3 && <div className="flex-1 h-px bg-border" />}
           </div>
         ))}
+      </div>
+
+      {/* AI Pipeline Notice */}
+      <div className="flex items-start gap-3 px-4 py-3 rounded-lg border border-primary/20 bg-primary/5 text-xs text-muted-foreground">
+        <Zap className="w-4 h-4 text-primary flex-shrink-0 mt-0.5" />
+        <span>
+          Ao registrar, o <strong className="text-foreground">Pipeline de IA EonSure</strong> será ativado automaticamente:
+          Motor de Regras + Score de Fraude serão executados em background sem necessidade de ação manual.
+        </span>
       </div>
 
       <form onSubmit={handleSubmit}>
@@ -178,6 +256,79 @@ export default function ClaimNew() {
             />
           </div>
 
+          {/* Document Upload — Estrutura Eônica */}
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <Label className="text-xs font-medium text-muted-foreground">
+                Documentos e Evidências
+              </Label>
+              <Badge variant="outline" className="text-xs border-primary/30 text-primary">
+                Estrutura Eônica
+              </Badge>
+            </div>
+
+            {/* Drop Zone */}
+            <div
+              className={cn(
+                "relative border-2 border-dashed rounded-lg p-6 text-center transition-all cursor-pointer",
+                isDragging
+                  ? "border-primary bg-primary/10"
+                  : "border-border hover:border-primary/50 hover:bg-accent/20"
+              )}
+              onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
+              onDragLeave={() => setIsDragging(false)}
+              onDrop={handleDrop}
+              onClick={() => fileInputRef.current?.click()}
+            >
+              <input
+                ref={fileInputRef}
+                type="file"
+                multiple
+                accept=".pdf,.jpg,.jpeg,.png,.webp"
+                className="hidden"
+                onChange={(e) => handleFileSelect(e.target.files)}
+              />
+              <Upload className={cn("w-8 h-8 mx-auto mb-2", isDragging ? "text-primary" : "text-muted-foreground/40")} />
+              <p className="text-sm text-muted-foreground">
+                <span className="text-primary font-medium">Clique para selecionar</span> ou arraste arquivos aqui
+              </p>
+              <p className="text-xs text-muted-foreground/60 mt-1">
+                PDF, JPG, PNG, WebP · Máximo {MAX_FILE_SIZE_MB}MB por arquivo
+              </p>
+            </div>
+
+            {/* File List */}
+            {uploadedFiles.length > 0 && (
+              <div className="space-y-2">
+                {uploadedFiles.map((file, index) => (
+                  <div
+                    key={index}
+                    className="flex items-center gap-3 px-3 py-2 rounded-lg border border-border bg-muted/20"
+                  >
+                    {file.type.startsWith("image/") ? (
+                      <Image className="w-4 h-4 text-primary flex-shrink-0" />
+                    ) : (
+                      <FileText className="w-4 h-4 text-primary flex-shrink-0" />
+                    )}
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-medium text-foreground truncate">{file.name}</p>
+                      <p className="text-xs text-muted-foreground">{formatFileSize(file.size)}</p>
+                    </div>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="w-6 h-6 text-muted-foreground hover:text-destructive"
+                      onClick={(e) => { e.stopPropagation(); removeFile(index); }}
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
           <div className="flex justify-end gap-3 pt-2">
             <Link href="/claims">
               <Button type="button" variant="outline" className="border-border text-muted-foreground">
@@ -189,8 +340,12 @@ export default function ClaimNew() {
               className="bg-primary text-primary-foreground hover:bg-primary/90"
               disabled={createClaim.isPending}
             >
-              <Save className="w-4 h-4 mr-1.5" />
-              {createClaim.isPending ? "Registrando..." : "Registrar Sinistro"}
+              {createClaim.isPending ? (
+                <Loader2 className="w-4 h-4 mr-1.5 animate-spin" />
+              ) : (
+                <Save className="w-4 h-4 mr-1.5" />
+              )}
+              {createClaim.isPending ? "Registrando e iniciando IA..." : "Registrar Sinistro"}
             </Button>
           </div>
         </Card>

@@ -6,12 +6,12 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { RiskBadge, StatusPill, SectionHeader } from "@/components/EonComponents";
 import { toast } from "sonner";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Link } from "wouter";
 import {
   ArrowLeft, ClipboardList, ShieldAlert, BarChart3, GitBranch,
   CheckCircle2, XCircle, ArrowRight, Clock, User, Zap,
-  AlertTriangle, FileText, ChevronRight,
+  AlertTriangle, FileText, Loader2, Sparkles,
 } from "lucide-react";
 import { CLAIM_TYPE_LABELS, CLAIM_STATUS_LABELS, CLAIM_STATUS_ORDER } from "../../../shared/types";
 import type { ClaimType, ClaimStatus } from "../../../shared/types";
@@ -30,20 +30,51 @@ interface ClaimDetailProps {
 
 export default function ClaimDetail({ id }: ClaimDetailProps) {
   const [notes, setNotes] = useState("");
+  const [aiProcessing, setAiProcessing] = useState(false);
   const utils = trpc.useUtils();
 
-  const { data: claim, isLoading } = trpc.claims.getById.useQuery({ id });
-  const { data: events } = trpc.claims.getEvents.useQuery({ claimId: id });
-  const { data: ruleLogs } = trpc.rules.getLogs.useQuery({ claimId: id });
-  const { data: fraudScores } = trpc.fraud.getScoresByClaim.useQuery({ claimId: id });
-  const { data: prediction } = trpc.analytics.getPredictiveAnalysis.useQuery({ claimId: id });
+  // Polling interval: 3s when AI is processing, 0 (disabled) otherwise
+  const pollInterval = aiProcessing ? 3000 : 0;
+
+  const { data: claim, isLoading } = trpc.claims.getById.useQuery(
+    { id },
+    { refetchInterval: pollInterval }
+  );
+  const { data: events } = trpc.claims.getEvents.useQuery(
+    { claimId: id },
+    { refetchInterval: pollInterval }
+  );
+  const { data: ruleLogs } = trpc.rules.getLogs.useQuery(
+    { claimId: id },
+    { refetchInterval: pollInterval }
+  );
+  const { data: fraudScores } = trpc.fraud.getScoresByClaim.useQuery(
+    { claimId: id },
+    { refetchInterval: pollInterval }
+  );
+  const { data: prediction } = trpc.analytics.getPredictiveAnalysis.useQuery(
+    { claimId: id },
+    { refetchInterval: pollInterval }
+  );
+
+  // Stop polling once fraud score and events are populated
+  useEffect(() => {
+    if (aiProcessing && fraudScores && fraudScores.length > 0) {
+      setAiProcessing(false);
+    }
+  }, [aiProcessing, fraudScores]);
 
   const advanceStatus = trpc.claims.advanceStatus.useMutation({
-    onSuccess: () => {
+    onSuccess: (_, vars) => {
       toast.success("Status atualizado com sucesso!");
       utils.claims.getById.invalidate({ id });
       utils.claims.getEvents.invalidate({ claimId: id });
       setNotes("");
+      // If advancing to risk_analysis, start polling for auto-prediction
+      if (vars.status === "risk_analysis") {
+        setAiProcessing(true);
+        toast.info("Análise preditiva sendo gerada automaticamente...", { duration: 4000 });
+      }
     },
     onError: (err) => toast.error(err.message),
   });
@@ -115,6 +146,16 @@ export default function ClaimDetail({ id }: ClaimDetailProps) {
         }
       />
 
+      {/* AI Processing Banner */}
+      {aiProcessing && (
+        <div className="flex items-center gap-3 px-4 py-3 rounded-lg border border-primary/30 bg-primary/5 text-sm text-primary animate-pulse">
+          <Loader2 className="w-4 h-4 animate-spin flex-shrink-0" />
+          <span>
+            <strong>Pipeline de IA em execução</strong> — Motor de Regras e Score de Fraude sendo processados automaticamente...
+          </span>
+        </div>
+      )}
+
       {/* Lifecycle Progress */}
       <Card className="p-5 border border-border bg-card">
         <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-4">
@@ -174,7 +215,11 @@ export default function ClaimDetail({ id }: ClaimDetailProps) {
             </div>
             <div className="flex justify-between">
               <span className="text-muted-foreground">Risco de Fraude</span>
-              {claim.fraudRisk ? (
+              {aiProcessing && !claim.fraudRisk ? (
+                <span className="flex items-center gap-1 text-xs text-primary">
+                  <Loader2 className="w-3 h-3 animate-spin" /> Calculando...
+                </span>
+              ) : claim.fraudRisk ? (
                 <RiskBadge level={claim.fraudRisk as "green" | "yellow" | "red"} />
               ) : (
                 <span className="text-muted-foreground text-xs">Não analisado</span>
@@ -216,9 +261,15 @@ export default function ClaimDetail({ id }: ClaimDetailProps) {
             </div>
           </div>
 
-          {/* AI Actions */}
+          {/* AI Actions — Manual override still available */}
           <div className="pt-3 border-t border-border space-y-2">
-            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Ações de IA</p>
+            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
+              <Sparkles className="w-3 h-3 text-primary" />
+              Ações de IA (Manual)
+            </p>
+            <p className="text-xs text-muted-foreground/60">
+              O pipeline automático executa na criação. Use abaixo para re-executar manualmente.
+            </p>
             <Button
               variant="outline"
               size="sm"
@@ -226,8 +277,12 @@ export default function ClaimDetail({ id }: ClaimDetailProps) {
               onClick={() => applyRules.mutate({ claimId: id })}
               disabled={applyRules.isPending}
             >
-              <GitBranch className="w-3.5 h-3.5 mr-2 text-primary" />
-              {applyRules.isPending ? "Aplicando..." : "Aplicar Motor de Regras"}
+              {applyRules.isPending ? (
+                <Loader2 className="w-3.5 h-3.5 mr-2 animate-spin" />
+              ) : (
+                <GitBranch className="w-3.5 h-3.5 mr-2 text-primary" />
+              )}
+              {applyRules.isPending ? "Aplicando..." : "Re-aplicar Motor de Regras"}
             </Button>
             <Button
               variant="outline"
@@ -236,8 +291,12 @@ export default function ClaimDetail({ id }: ClaimDetailProps) {
               onClick={() => analyzeRisk.mutate({ claimId: id })}
               disabled={analyzeRisk.isPending}
             >
-              <ShieldAlert className="w-3.5 h-3.5 mr-2 text-yellow-400" />
-              {analyzeRisk.isPending ? "Analisando..." : "Analisar Risco de Fraude"}
+              {analyzeRisk.isPending ? (
+                <Loader2 className="w-3.5 h-3.5 mr-2 animate-spin" />
+              ) : (
+                <ShieldAlert className="w-3.5 h-3.5 mr-2 text-yellow-400" />
+              )}
+              {analyzeRisk.isPending ? "Analisando..." : "Re-analisar Risco de Fraude"}
             </Button>
             <Button
               variant="outline"
@@ -246,8 +305,12 @@ export default function ClaimDetail({ id }: ClaimDetailProps) {
               onClick={() => generatePrediction.mutate({ claimId: id })}
               disabled={generatePrediction.isPending}
             >
-              <BarChart3 className="w-3.5 h-3.5 mr-2 text-purple-400" />
-              {generatePrediction.isPending ? "Gerando..." : "Gerar Análise Preditiva"}
+              {generatePrediction.isPending ? (
+                <Loader2 className="w-3.5 h-3.5 mr-2 animate-spin" />
+              ) : (
+                <BarChart3 className="w-3.5 h-3.5 mr-2 text-purple-400" />
+              )}
+              {generatePrediction.isPending ? "Gerando..." : "Re-gerar Análise Preditiva"}
             </Button>
           </div>
         </Card>
@@ -258,7 +321,13 @@ export default function ClaimDetail({ id }: ClaimDetailProps) {
             <ShieldAlert className="w-4 h-4 text-yellow-400" />
             Score de Risco de Fraude
           </h3>
-          {latestFraud ? (
+          {aiProcessing && !latestFraud ? (
+            <div className="flex flex-col items-center justify-center py-8 gap-3">
+              <Loader2 className="w-10 h-10 text-primary animate-spin" />
+              <p className="text-sm text-primary font-medium">Calculando score de risco...</p>
+              <p className="text-xs text-muted-foreground">O modelo de IA está analisando os dados do sinistro</p>
+            </div>
+          ) : latestFraud ? (
             <div className="space-y-4">
               <div className="flex items-center justify-between">
                 <div>
@@ -285,7 +354,7 @@ export default function ClaimDetail({ id }: ClaimDetailProps) {
               {Array.isArray(latestFraud.factors) && (
                 <div className="space-y-2">
                   <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Fatores de Risco</p>
-                  {(latestFraud.factors as Array<{ name: string; weight: number; contribution: number }>).map((factor: { name: string; weight: number; contribution: number }, i: number) => (
+                  {(latestFraud.factors as Array<{ name: string; weight: number; contribution: number }>).map((factor, i) => (
                     <div key={i} className="space-y-1">
                       <div className="flex justify-between text-xs">
                         <span className="text-muted-foreground">{factor.name}</span>
@@ -312,7 +381,7 @@ export default function ClaimDetail({ id }: ClaimDetailProps) {
             <div className="flex flex-col items-center justify-center py-8 text-center">
               <ShieldAlert className="w-10 h-10 text-muted-foreground/30 mb-3" />
               <p className="text-sm text-muted-foreground">Score não calculado</p>
-              <p className="text-xs text-muted-foreground/60 mt-1">Use "Analisar Risco de Fraude" para calcular</p>
+              <p className="text-xs text-muted-foreground/60 mt-1">Use "Re-analisar Risco de Fraude" para calcular</p>
             </div>
           )}
         </Card>
@@ -359,7 +428,7 @@ export default function ClaimDetail({ id }: ClaimDetailProps) {
             <div className="flex flex-col items-center justify-center py-8 text-center">
               <BarChart3 className="w-10 h-10 text-muted-foreground/30 mb-3" />
               <p className="text-sm text-muted-foreground">Análise não gerada</p>
-              <p className="text-xs text-muted-foreground/60 mt-1">Use "Gerar Análise Preditiva" para calcular</p>
+              <p className="text-xs text-muted-foreground/60 mt-1">Gerada automaticamente ao avançar para Análise de Risco</p>
             </div>
           )}
         </Card>
@@ -392,8 +461,11 @@ export default function ClaimDetail({ id }: ClaimDetailProps) {
                 onClick={() => advanceStatus.mutate({ id, status: nextStatus, notes })}
                 disabled={advanceStatus.isPending}
               >
+                {advanceStatus.isPending ? (
+                  <Loader2 className="w-4 h-4 mr-1.5 animate-spin" />
+                ) : null}
                 Avançar
-                <ArrowRight className="w-4 h-4 ml-1.5" />
+                {!advanceStatus.isPending && <ArrowRight className="w-4 h-4 ml-1.5" />}
               </Button>
             </div>
           </div>

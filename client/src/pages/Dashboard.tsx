@@ -9,20 +9,14 @@ import {
   TrendingUp, Clock, ShieldCheck, ClipboardList, AlertTriangle,
   CheckCircle2, BarChart3, ArrowRight, RefreshCw, Zap,
 } from "lucide-react";
-import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from "recharts";
+import {
+  AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip,
+  ResponsiveContainer, PieChart, Pie, Cell,
+} from "recharts";
 import { PERSONA_LABELS } from "../../../shared/types";
 import type { Persona } from "../../../shared/types";
 import { cn } from "@/lib/utils";
-
-// Mock trend data for charts
-const TREND_DATA = [
-  { month: "Jan", sinistros: 42, fraudes: 8, resolvidos: 35 },
-  { month: "Fev", sinistros: 58, fraudes: 12, resolvidos: 48 },
-  { month: "Mar", sinistros: 51, fraudes: 9, resolvidos: 44 },
-  { month: "Abr", sinistros: 67, fraudes: 15, resolvidos: 55 },
-  { month: "Mai", sinistros: 73, fraudes: 11, resolvidos: 68 },
-  { month: "Jun", sinistros: 89, fraudes: 18, resolvidos: 80 },
-];
+import { useMemo } from "react";
 
 const RISK_COLORS = {
   green: "oklch(0.65 0.18 145)",
@@ -38,11 +32,43 @@ const CUSTOM_TOOLTIP_STYLE = {
   fontSize: "12px",
 };
 
+// Formats "2025-11" → "Nov"
+function formatMonthLabel(ym: string): string {
+  const [year, month] = ym.split("-");
+  const date = new Date(Number(year), Number(month) - 1, 1);
+  return date.toLocaleDateString("pt-BR", { month: "short" }).replace(".", "");
+}
+
 export default function Dashboard() {
   const { user } = useAuth();
   const persona = (user?.persona ?? "perito") as Persona;
-  const { data: kpis, isLoading: kpisLoading, refetch } = trpc.analytics.getKpis.useQuery();
+
+  const {
+    data: kpis,
+    isLoading: kpisLoading,
+    refetch,
+  } = trpc.analytics.getKpis.useQuery(undefined, { refetchInterval: 30_000 });
+
+  const {
+    data: trendRaw,
+    isLoading: trendLoading,
+  } = trpc.analytics.getKpisTrend.useQuery(
+    { months: 6 },
+    { refetchInterval: 30_000 }
+  );
+
   const { data: claims, isLoading: claimsLoading } = trpc.claims.list.useQuery({ limit: 5 });
+
+  // Transform trend data for Recharts
+  const trendData = useMemo(() => {
+    if (!trendRaw || trendRaw.length === 0) return [];
+    return trendRaw.map((r) => ({
+      month: formatMonthLabel(r.month),
+      sinistros: r.totalClaims,
+      resolvidos: r.closedClaims,
+      fraudes: r.fraudRed,
+    }));
+  }, [trendRaw]);
 
   const fraudPieData = kpis
     ? [
@@ -70,7 +96,7 @@ export default function Dashboard() {
           <Button
             variant="outline"
             size="sm"
-            onClick={() => refetch()}
+            onClick={() => { refetch(); }}
             className="border-border text-muted-foreground hover:text-foreground"
           >
             <RefreshCw className="w-3.5 h-3.5 mr-1.5" />
@@ -130,12 +156,12 @@ export default function Dashboard() {
 
       {/* Charts Row */}
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
-        {/* Trend Chart */}
+        {/* Trend Chart — Real Data */}
         <Card className="xl:col-span-2 p-5 border border-border bg-card">
           <div className="flex items-center justify-between mb-5">
             <div>
               <h3 className="text-sm font-semibold text-foreground">Volume de Sinistros</h3>
-              <p className="text-xs text-muted-foreground mt-0.5">Últimos 6 meses</p>
+              <p className="text-xs text-muted-foreground mt-0.5">Últimos 6 meses · dados reais</p>
             </div>
             <div className="flex items-center gap-3 text-xs text-muted-foreground">
               <span className="flex items-center gap-1.5">
@@ -148,31 +174,42 @@ export default function Dashboard() {
               </span>
               <span className="flex items-center gap-1.5">
                 <div className="w-2 h-2 rounded-full bg-red-400" />
-                Fraudes
+                Alto Risco
               </span>
             </div>
           </div>
-          <ResponsiveContainer width="100%" height={200}>
-            <AreaChart data={TREND_DATA}>
-              <defs>
-                <linearGradient id="colorSinistros" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="oklch(0.72 0.18 195)" stopOpacity={0.3} />
-                  <stop offset="95%" stopColor="oklch(0.72 0.18 195)" stopOpacity={0} />
-                </linearGradient>
-                <linearGradient id="colorResolvidos" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="oklch(0.65 0.18 145)" stopOpacity={0.3} />
-                  <stop offset="95%" stopColor="oklch(0.65 0.18 145)" stopOpacity={0} />
-                </linearGradient>
-              </defs>
-              <CartesianGrid strokeDasharray="3 3" stroke="oklch(0.28 0.05 240)" vertical={false} />
-              <XAxis dataKey="month" tick={{ fill: "oklch(0.60 0.04 240)", fontSize: 11 }} axisLine={false} tickLine={false} />
-              <YAxis tick={{ fill: "oklch(0.60 0.04 240)", fontSize: 11 }} axisLine={false} tickLine={false} />
-              <Tooltip contentStyle={CUSTOM_TOOLTIP_STYLE} />
-              <Area type="monotone" dataKey="sinistros" stroke="oklch(0.72 0.18 195)" strokeWidth={2} fill="url(#colorSinistros)" name="Registrados" />
-              <Area type="monotone" dataKey="resolvidos" stroke="oklch(0.65 0.18 145)" strokeWidth={2} fill="url(#colorResolvidos)" name="Resolvidos" />
-              <Area type="monotone" dataKey="fraudes" stroke="oklch(0.60 0.22 25)" strokeWidth={1.5} fill="none" strokeDasharray="4 2" name="Fraudes" />
-            </AreaChart>
-          </ResponsiveContainer>
+
+          {trendLoading ? (
+            <Skeleton className="w-full h-[200px] rounded-lg" />
+          ) : trendData.length === 0 ? (
+            <div className="flex flex-col items-center justify-center h-[200px] text-center">
+              <BarChart3 className="w-10 h-10 text-muted-foreground/30 mb-2" />
+              <p className="text-xs text-muted-foreground">Nenhum dado de tendência disponível ainda.</p>
+              <p className="text-xs text-muted-foreground/60 mt-1">Registre sinistros para visualizar a evolução.</p>
+            </div>
+          ) : (
+            <ResponsiveContainer width="100%" height={200}>
+              <AreaChart data={trendData}>
+                <defs>
+                  <linearGradient id="colorSinistros" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="oklch(0.72 0.18 195)" stopOpacity={0.3} />
+                    <stop offset="95%" stopColor="oklch(0.72 0.18 195)" stopOpacity={0} />
+                  </linearGradient>
+                  <linearGradient id="colorResolvidos" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="oklch(0.65 0.18 145)" stopOpacity={0.3} />
+                    <stop offset="95%" stopColor="oklch(0.65 0.18 145)" stopOpacity={0} />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" stroke="oklch(0.28 0.05 240)" vertical={false} />
+                <XAxis dataKey="month" tick={{ fill: "oklch(0.60 0.04 240)", fontSize: 11 }} axisLine={false} tickLine={false} />
+                <YAxis tick={{ fill: "oklch(0.60 0.04 240)", fontSize: 11 }} axisLine={false} tickLine={false} allowDecimals={false} />
+                <Tooltip contentStyle={CUSTOM_TOOLTIP_STYLE} />
+                <Area type="monotone" dataKey="sinistros" stroke="oklch(0.72 0.18 195)" strokeWidth={2} fill="url(#colorSinistros)" name="Registrados" />
+                <Area type="monotone" dataKey="resolvidos" stroke="oklch(0.65 0.18 145)" strokeWidth={2} fill="url(#colorResolvidos)" name="Resolvidos" />
+                <Area type="monotone" dataKey="fraudes" stroke="oklch(0.60 0.22 25)" strokeWidth={1.5} fill="none" strokeDasharray="4 2" name="Alto Risco" />
+              </AreaChart>
+            </ResponsiveContainer>
+          )}
         </Card>
 
         {/* Fraud Distribution */}

@@ -111,13 +111,20 @@ export async function updateTenantBranding(
   await db.update(tenants).set(branding).where(eq(tenants.id, id));
 }
 // ─── Claims ───────────────────────────────────────────────────────────────────
-export async function getClaimsByTenant(tenantId: number, limit = 50, offset = 0) {
+export async function getClaimsByTenant(
+  tenantId: number,
+  limit = 50,
+  offset = 0,
+  status?: string
+) {
   const db = await getDb();
   if (!db) return [];
+  const conditions = [eq(claims.tenantId, tenantId)];
+  if (status) conditions.push(eq(claims.status, status as InsertClaim["status"]));
   return db
     .select()
     .from(claims)
-    .where(eq(claims.tenantId, tenantId))
+    .where(and(...conditions))
     .orderBy(desc(claims.createdAt))
     .limit(limit)
     .offset(offset);
@@ -342,6 +349,47 @@ export async function upsertSubscription(data: InsertSubscription) {
       updatedAt: new Date(),
     },
   });
+}
+
+// ─── Analytics / KPIs Trend (Time Series) ───────────────────────────────────
+export async function getKpisTrend(tenantId: number, months = 6) {
+  const db = await getDb();
+  if (!db) return [];
+
+  const rows = await db
+    .select({
+      month: sql<string>`DATE_FORMAT(createdAt, '%Y-%m')`,
+      totalClaims: count(),
+      closedClaims: sql<number>`SUM(CASE WHEN status = 'closed' THEN 1 ELSE 0 END)`,
+      rejectedClaims: sql<number>`SUM(CASE WHEN status = 'rejected' THEN 1 ELSE 0 END)`,
+      fraudRed: sql<number>`SUM(CASE WHEN fraudRisk = 'red' THEN 1 ELSE 0 END)`,
+      totalClaimed: sql<number>`SUM(CAST(claimedAmount AS DECIMAL(15,2)))`,
+      totalApproved: sql<number>`SUM(CAST(approvedAmount AS DECIMAL(15,2)))`,
+      avgResolutionDays: sql<number>`AVG(CASE WHEN status = 'closed' THEN DATEDIFF(resolvedAt, createdAt) END)`,
+    })
+    .from(claims)
+    .where(
+      and(
+        eq(claims.tenantId, tenantId),
+        sql`createdAt >= DATE_SUB(NOW(), INTERVAL ${months} MONTH)`
+      )
+    )
+    .groupBy(sql`DATE_FORMAT(createdAt, '%Y-%m')`)
+    .orderBy(sql`DATE_FORMAT(createdAt, '%Y-%m') ASC`);
+
+  return rows.map((r) => ({
+    month: r.month,
+    totalClaims: Number(r.totalClaims ?? 0),
+    closedClaims: Number(r.closedClaims ?? 0),
+    rejectedClaims: Number(r.rejectedClaims ?? 0),
+    fraudRed: Number(r.fraudRed ?? 0),
+    totalClaimed: Number(r.totalClaimed ?? 0),
+    totalApproved: Number(r.totalApproved ?? 0),
+    avgResolutionDays: Number(r.avgResolutionDays ?? 0).toFixed(1),
+    financialEfficiency: r.totalClaimed && Number(r.totalClaimed) > 0
+      ? ((1 - Number(r.totalApproved ?? 0) / Number(r.totalClaimed)) * 100).toFixed(1)
+      : "0.0",
+  }));
 }
 
 // ─── Analytics / KPIs ────────────────────────────────────────────────────────

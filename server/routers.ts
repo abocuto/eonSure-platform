@@ -16,9 +16,12 @@ import {
   getPredictiveAnalysisByClaim, createPredictiveAnalysis,
   getCsatByTenant, createCsatResponse,
   getSubscriptionByTenant, upsertSubscription,
-  getKpisByTenant,
+  getKpisByTenant, getKpisTrend,
 } from "./db";
 import { TRPCError } from "@trpc/server";
+import { requirePermission } from "./_core/rbac";
+import { analyzeFraudWithAI, generatePredictionWithAI } from "./_core/aiService";
+import { eventBus } from "./_core/eventBus";
 
 // Helper: get tenantId from user (default to 1 for demo)
 function getTenantId(user: { tenantId?: number | null }) {
@@ -36,17 +39,37 @@ export const appRouter = router({
       ctx.res.clearCookie(COOKIE_NAME, { ...cookieOptions, maxAge: -1 });
       return { success: true } as const;
     }),
+
+    // Update only name — persona is now admin-only
     updateProfile: protectedProcedure
       .input(z.object({
         name: z.string().min(1).max(128),
-        persona: z.enum(["c-level", "gerente-sinistros", "analista-fraude", "cio", "perito"]),
       }))
       .mutation(async ({ ctx, input }) => {
+        requirePermission(ctx.user, "profile:update-name");
         const db = await getDb();
         if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
         await db.update(users)
-          .set({ name: input.name, persona: input.persona, updatedAt: new Date() })
+          .set({ name: input.name, updatedAt: new Date() })
           .where(eq(users.id, ctx.user.id));
+        return { success: true };
+      }),
+
+    // Admin-only: assign persona to a user
+    assignPersona: protectedProcedure
+      .input(z.object({
+        userId: z.number(),
+        persona: z.enum(["c-level", "gerente-sinistros", "analista-fraude", "cio", "perito"]),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        if (ctx.user.role !== "admin") {
+          throw new TRPCError({ code: "FORBIDDEN", message: "Apenas administradores podem atribuir personas." });
+        }
+        const db = await getDb();
+        if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
+        await db.update(users)
+          .set({ persona: input.persona, updatedAt: new Date() })
+          .where(eq(users.id, input.userId));
         return { success: true };
       }),
   }),
@@ -94,6 +117,7 @@ export const appRouter = router({
         })
       )
       .mutation(async ({ ctx, input }) => {
+        requirePermission(ctx.user, "subscriptions:write");
         const { tenantId, ...pillars } = input;
         const myTenantId = getTenantId(ctx.user);
         if (ctx.user.role !== "admin" && tenantId !== myTenantId) {
@@ -101,6 +125,7 @@ export const appRouter = router({
         }
         return updateTenantPillars(tenantId, pillars);
       }),
+
     updateBranding: protectedProcedure
       .input(
         z.object({
@@ -114,9 +139,7 @@ export const appRouter = router({
         })
       )
       .mutation(async ({ ctx, input }) => {
-        if (ctx.user.role !== "admin" && ctx.user.persona !== "cio") {
-          throw new TRPCError({ code: "FORBIDDEN" });
-        }
+        requirePermission(ctx.user, "tenant:branding");
         const tenantId = getTenantId(ctx.user);
         return updateTenantBranding(tenantId, input);
       }),
@@ -125,15 +148,21 @@ export const appRouter = router({
   // ─── Claims ────────────────────────────────────────────────────────────────
   claims: router({
     list: protectedProcedure
-      .input(z.object({ limit: z.number().optional(), offset: z.number().optional() }))
+      .input(z.object({
+        limit: z.number().optional(),
+        offset: z.number().optional(),
+        status: z.enum(["ingestion", "triage", "risk_analysis", "investigation", "resolution", "closed", "rejected"]).optional(),
+      }))
       .query(async ({ ctx, input }) => {
+        requirePermission(ctx.user, "claims:read");
         const tenantId = getTenantId(ctx.user);
-        return getClaimsByTenant(tenantId, input.limit ?? 50, input.offset ?? 0);
+        return getClaimsByTenant(tenantId, input.limit ?? 50, input.offset ?? 0, input.status);
       }),
 
     getById: protectedProcedure
       .input(z.object({ id: z.number() }))
       .query(async ({ ctx, input }) => {
+        requirePermission(ctx.user, "claims:read");
         const tenantId = getTenantId(ctx.user);
         const claim = await getClaimById(input.id, tenantId);
         if (!claim) throw new TRPCError({ code: "NOT_FOUND" });
@@ -150,20 +179,27 @@ export const appRouter = router({
           description: z.string().optional(),
           incidentDate: z.string().optional(),
           claimedAmount: z.string().optional(),
+          attachmentUrls: z.array(z.string()).optional(),
         })
       )
       .mutation(async ({ ctx, input }) => {
+        requirePermission(ctx.user, "claims:create");
         const tenantId = getTenantId(ctx.user);
         const claimNumber = `CLM-${Date.now()}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
-        await createClaim({
-          ...input,
+        const { attachmentUrls, ...claimData } = input;
+        const result = await createClaim({
+          ...claimData,
           claimNumber,
           tenantId,
           status: "ingestion",
           incidentDate: input.incidentDate ? new Date(input.incidentDate) : undefined,
+          metadata: attachmentUrls && attachmentUrls.length > 0 ? { attachmentUrls } : undefined,
         });
+
+        const insertId = (result as { insertId?: number }).insertId ?? 0;
+
         await createClaimEvent({
-          claimId: 0, // will be updated
+          claimId: insertId,
           tenantId,
           eventType: "status_change",
           toStatus: "ingestion",
@@ -172,7 +208,22 @@ export const appRouter = router({
           performedByName: ctx.user.name ?? "Sistema",
           isAutomated: false,
         });
-        return { claimNumber };
+
+        // Publish event for async pipeline (rules engine + fraud scoring)
+        eventBus.publish({
+          type: "claim.created",
+          payload: {
+            claimId: insertId,
+            tenantId,
+            claimType: input.claimType,
+            claimedAmount: input.claimedAmount ?? null,
+            description: input.description ?? null,
+            performedById: ctx.user.id,
+            performedByName: ctx.user.name ?? "Sistema",
+          },
+        });
+
+        return { claimNumber, claimId: insertId };
       }),
 
     advanceStatus: protectedProcedure
@@ -185,9 +236,22 @@ export const appRouter = router({
         })
       )
       .mutation(async ({ ctx, input }) => {
+        requirePermission(ctx.user, "claims:advance");
         const tenantId = getTenantId(ctx.user);
         const claim = await getClaimById(input.id, tenantId);
         if (!claim) throw new TRPCError({ code: "NOT_FOUND" });
+
+        // Enforce lifecycle order
+        const ORDER = ["ingestion", "triage", "risk_analysis", "investigation", "resolution", "closed"];
+        const currentIdx = ORDER.indexOf(claim.status);
+        const nextIdx = ORDER.indexOf(input.status);
+        const isRejection = input.status === "rejected";
+        if (!isRejection && nextIdx !== currentIdx + 1) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: `Transição inválida: não é possível ir de "${claim.status}" para "${input.status}" diretamente.`,
+          });
+        }
 
         const extra: Record<string, unknown> = {};
         if (input.approvedAmount) extra.approvedAmount = input.approvedAmount;
@@ -205,12 +269,27 @@ export const appRouter = router({
           performedByName: ctx.user.name ?? "Sistema",
           isAutomated: false,
         });
+
+        // Publish event for async pipeline (auto-prediction on risk_analysis)
+        eventBus.publish({
+          type: "claim.status_changed",
+          payload: {
+            claimId: input.id,
+            tenantId,
+            fromStatus: claim.status,
+            toStatus: input.status,
+            performedById: ctx.user.id,
+            performedByName: ctx.user.name ?? "Sistema",
+          },
+        });
+
         return { success: true };
       }),
 
     getEvents: protectedProcedure
       .input(z.object({ claimId: z.number() }))
       .query(async ({ ctx, input }) => {
+        requirePermission(ctx.user, "claims:read");
         const tenantId = getTenantId(ctx.user);
         return getClaimEvents(input.claimId, tenantId);
       }),
@@ -219,6 +298,7 @@ export const appRouter = router({
   // ─── Rules (Motor de Regras No-Code) ──────────────────────────────────────
   rules: router({
     list: protectedProcedure.query(async ({ ctx }) => {
+      requirePermission(ctx.user, "rules:read");
       const tenantId = getTenantId(ctx.user);
       return getRulesByTenant(tenantId);
     }),
@@ -241,6 +321,7 @@ export const appRouter = router({
         })
       )
       .mutation(async ({ ctx, input }) => {
+        requirePermission(ctx.user, "rules:write");
         const tenantId = getTenantId(ctx.user);
         return createRule({ ...input, tenantId, createdBy: ctx.user.id });
       }),
@@ -262,6 +343,7 @@ export const appRouter = router({
         })
       )
       .mutation(async ({ ctx, input }) => {
+        requirePermission(ctx.user, "rules:write");
         const tenantId = getTenantId(ctx.user);
         const { id, ...data } = input;
         return updateRule(id, tenantId, data);
@@ -270,6 +352,7 @@ export const appRouter = router({
     delete: protectedProcedure
       .input(z.object({ id: z.number() }))
       .mutation(async ({ ctx, input }) => {
+        requirePermission(ctx.user, "rules:delete");
         const tenantId = getTenantId(ctx.user);
         return deleteRule(input.id, tenantId);
       }),
@@ -277,6 +360,7 @@ export const appRouter = router({
     getLogs: protectedProcedure
       .input(z.object({ claimId: z.number().optional(), limit: z.number().optional() }))
       .query(async ({ ctx, input }) => {
+        requirePermission(ctx.user, "rules:read");
         const tenantId = getTenantId(ctx.user);
         if (input.claimId) return getRuleLogsByClaim(input.claimId, tenantId);
         return getRuleLogsByTenant(tenantId, input.limit ?? 50);
@@ -285,6 +369,7 @@ export const appRouter = router({
     applyToClaimSimulate: protectedProcedure
       .input(z.object({ claimId: z.number() }))
       .mutation(async ({ ctx, input }) => {
+        requirePermission(ctx.user, "rules:read");
         const tenantId = getTenantId(ctx.user);
         const claim = await getClaimById(input.claimId, tenantId);
         if (!claim) throw new TRPCError({ code: "NOT_FOUND" });
@@ -337,13 +422,15 @@ export const appRouter = router({
   fraud: router({
     getScoresByClaim: protectedProcedure
       .input(z.object({ claimId: z.number() }))
-      .query(async ({ input }) => {
+      .query(async ({ ctx, input }) => {
+        requirePermission(ctx.user, "fraud:read");
         return getFraudScoresByClaim(input.claimId);
       }),
 
     getScoresByTenant: protectedProcedure
       .input(z.object({ riskLevel: z.enum(["green", "yellow", "red"]).optional() }))
       .query(async ({ ctx, input }) => {
+        requirePermission(ctx.user, "fraud:read");
         const tenantId = getTenantId(ctx.user);
         return getFraudScoresByTenant(tenantId, input.riskLevel);
       }),
@@ -351,22 +438,22 @@ export const appRouter = router({
     analyzeRisk: protectedProcedure
       .input(z.object({ claimId: z.number() }))
       .mutation(async ({ ctx, input }) => {
+        requirePermission(ctx.user, "fraud:analyze");
         const tenantId = getTenantId(ctx.user);
         const claim = await getClaimById(input.claimId, tenantId);
         if (!claim) throw new TRPCError({ code: "NOT_FOUND" });
 
-        // Simulate ML risk scoring
-        const amount = Number(claim.claimedAmount ?? 0);
-        const factors = [
-          { name: "Valor do Sinistro", weight: 0.3, value: amount, contribution: amount > 50000 ? 0.4 : 0.1 },
-          { name: "Histórico do Segurado", weight: 0.25, value: "sem histórico", contribution: 0.1 },
-          { name: "Tipo de Sinistro", weight: 0.2, value: claim.claimType, contribution: claim.claimType === "auto" ? 0.2 : 0.05 },
-          { name: "Tempo desde Incidente", weight: 0.15, value: "2 dias", contribution: 0.05 },
-          { name: "Padrão de Documentação", weight: 0.1, value: "completo", contribution: 0.02 },
-        ];
+        // Real AI-powered fraud analysis via LLM
+        const aiResult = await analyzeFraudWithAI({
+          claimType: claim.claimType,
+          description: claim.description,
+          claimedAmount: Number(claim.claimedAmount ?? 0),
+          insuredName: claim.insuredName ?? "",
+          policyNumber: claim.policyNumber,
+          incidentDate: claim.incidentDate,
+        });
 
-        const score = factors.reduce((acc, f) => acc + f.contribution * 100, 0);
-        const riskLevel: "green" | "yellow" | "red" = score < 30 ? "green" : score < 60 ? "yellow" : "red";
+        const { score, riskLevel, factors, modelVersion } = aiResult;
 
         await upsertFraudScore({
           claimId: input.claimId,
@@ -374,7 +461,7 @@ export const appRouter = router({
           score: score.toFixed(2),
           riskLevel,
           factors,
-          modelVersion: "v1.0",
+          modelVersion,
           investigationStatus: "pending",
         });
 
@@ -387,9 +474,9 @@ export const appRouter = router({
           claimId: input.claimId,
           tenantId,
           eventType: "fraud_score_updated",
-          description: `Score de risco calculado: ${score.toFixed(0)}% (${riskLevel.toUpperCase()})`,
+          description: `IA analisou risco: ${score.toFixed(0)}% (${riskLevel.toUpperCase()}) — ${aiResult.reasoning}`,
           performedBy: ctx.user.id,
-          performedByName: "Sistema IA",
+          performedByName: "EonSure AI",
           isAutomated: true,
         });
 
@@ -405,6 +492,7 @@ export const appRouter = router({
         })
       )
       .mutation(async ({ ctx, input }) => {
+        requirePermission(ctx.user, "fraud:update-investigation");
         return updateFraudInvestigation(input.scoreId, input.status, input.notes, ctx.user.id);
       }),
   }),
@@ -412,32 +500,51 @@ export const appRouter = router({
   // ─── Analytics ─────────────────────────────────────────────────────────────
   analytics: router({
     getKpis: protectedProcedure.query(async ({ ctx }) => {
+      requirePermission(ctx.user, "analytics:read");
       const tenantId = getTenantId(ctx.user);
       return getKpisByTenant(tenantId);
     }),
 
+    getKpisTrend: protectedProcedure
+      .input(z.object({ months: z.number().min(1).max(12).optional() }))
+      .query(async ({ ctx, input }) => {
+        requirePermission(ctx.user, "analytics:read");
+        const tenantId = getTenantId(ctx.user);
+        return getKpisTrend(tenantId, input.months ?? 6);
+      }),
+
     getPredictiveAnalysis: protectedProcedure
       .input(z.object({ claimId: z.number() }))
-      .query(async ({ input }) => {
+      .query(async ({ ctx, input }) => {
+        requirePermission(ctx.user, "analytics:predict");
         return getPredictiveAnalysisByClaim(input.claimId);
       }),
 
     generatePrediction: protectedProcedure
       .input(z.object({ claimId: z.number() }))
       .mutation(async ({ ctx, input }) => {
+        requirePermission(ctx.user, "analytics:predict");
         const tenantId = getTenantId(ctx.user);
         const claim = await getClaimById(input.claimId, tenantId);
         if (!claim) throw new TRPCError({ code: "NOT_FOUND" });
 
         const claimedAmount = Number(claim.claimedAmount ?? 10000);
         const fraudScore = Number(claim.fraudScore ?? 20);
+        const fraudRisk = claim.fraudRisk ?? "green";
 
-        // Simulate predictive model
-        const suggestedAmount = claimedAmount * (1 - fraudScore / 200);
-        const predictedFinalCost = suggestedAmount * 1.05;
-        const litigationProbability = fraudScore > 60 ? 0.45 : fraudScore > 30 ? 0.15 : 0.05;
-        const predictedResolutionDays = fraudScore > 60 ? 45 : fraudScore > 30 ? 21 : 10;
-        const confidenceScore = 0.82;
+        // Real AI-powered predictive analytics via LLM
+        const prediction = await generatePredictionWithAI({
+          claimType: claim.claimType,
+          description: claim.description,
+          claimedAmount,
+          fraudScore,
+          riskLevel: fraudRisk,
+        });
+
+        const {
+          suggestedAmount, predictedFinalCost, litigationProbability,
+          predictedResolutionDays, confidenceScore, analysisFactors,
+        } = prediction;
 
         await createPredictiveAnalysis({
           claimId: input.claimId,
@@ -448,12 +555,8 @@ export const appRouter = router({
           predictedResolutionDays,
           confidenceScore: confidenceScore.toFixed(2),
           similarCasesCount: 127,
-          analysisFactors: [
-            { name: "Valor Reclamado", impact: "alto", direction: "neutro" },
-            { name: "Score de Fraude", impact: "médio", direction: "negativo" },
-            { name: "Tipo de Sinistro", impact: "baixo", direction: "neutro" },
-          ],
-          modelVersion: "v1.0",
+          analysisFactors,
+          modelVersion: "gpt-4.1-mini-v1",
         });
 
         await updateClaim(input.claimId, tenantId, {
@@ -469,6 +572,7 @@ export const appRouter = router({
   // ─── CSAT ──────────────────────────────────────────────────────────────────
   csat: router({
     list: protectedProcedure.query(async ({ ctx }) => {
+      requirePermission(ctx.user, "csat:read");
       const tenantId = getTenantId(ctx.user);
       return getCsatByTenant(tenantId);
     }),
@@ -484,6 +588,7 @@ export const appRouter = router({
         })
       )
       .mutation(async ({ ctx, input }) => {
+        requirePermission(ctx.user, "csat:submit");
         const tenantId = getTenantId(ctx.user);
         const persona = (ctx.user.persona ?? "perito") as InsertCsatResponse["persona"];
         await createCsatResponse({
@@ -500,6 +605,7 @@ export const appRouter = router({
   // ─── Subscriptions ─────────────────────────────────────────────────────────
   subscriptions: router({
     getMine: protectedProcedure.query(async ({ ctx }) => {
+      requirePermission(ctx.user, "subscriptions:read");
       const tenantId = getTenantId(ctx.user);
       return getSubscriptionByTenant(tenantId);
     }),
@@ -515,9 +621,7 @@ export const appRouter = router({
         })
       )
       .mutation(async ({ ctx, input }) => {
-        if (ctx.user.persona !== "cio" && ctx.user.role !== "admin") {
-          throw new TRPCError({ code: "FORBIDDEN", message: "Apenas o CIO pode gerenciar assinaturas" });
-        }
+        requirePermission(ctx.user, "subscriptions:write");
         const tenantId = getTenantId(ctx.user);
         const existing = await getSubscriptionByTenant(tenantId);
         await upsertSubscription({

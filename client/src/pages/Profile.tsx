@@ -5,24 +5,15 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { toast } from "sonner";
-import { User, Mail, Shield, Building2, Save, ArrowLeft } from "lucide-react";
+import { User, Mail, Shield, Building2, Save, ArrowLeft, Lock } from "lucide-react";
 import { useLocation } from "wouter";
 import { PERSONA_LABELS } from "../../../shared/types";
 import type { Persona } from "../../../shared/types";
 import EonLayout from "@/components/EonLayout";
-
-const PERSONA_OPTIONS: { value: Persona; label: string }[] = [
-  { value: "c-level", label: "C-Level / Executivo" },
-  { value: "gerente-sinistros", label: "Gerente de Sinistros" },
-  { value: "analista-fraude", label: "Analista de Fraude" },
-  { value: "cio", label: "Diretor de Tecnologia (CIO)" },
-  { value: "perito", label: "Perito / Avaliador" },
-];
 
 function ProfileContent() {
   const { user } = useAuth();
@@ -30,9 +21,9 @@ function ProfileContent() {
   const utils = trpc.useUtils();
 
   const [name, setName] = useState(user?.name ?? "");
-  const [persona, setPersona] = useState<Persona>((user?.persona as Persona) ?? "perito");
   const [saving, setSaving] = useState(false);
 
+  // updateProfile now only accepts name — persona is admin-only (RBAC)
   const updateProfile = trpc.auth.updateProfile.useMutation({
     onSuccess: () => {
       utils.auth.me.invalidate();
@@ -47,10 +38,11 @@ function ProfileContent() {
 
   const handleSave = () => {
     setSaving(true);
-    updateProfile.mutate({ name, persona });
+    updateProfile.mutate({ name });
   };
 
   const initials = (user?.name ?? "U").slice(0, 2).toUpperCase();
+  const persona = (user?.persona as Persona) ?? "perito";
 
   return (
     <div className="max-w-2xl mx-auto p-6 space-y-6">
@@ -83,7 +75,7 @@ function ProfileContent() {
               <p className="text-base font-semibold text-foreground">{user?.name ?? "Usuário"}</p>
               <p className="text-sm text-muted-foreground">{user?.email ?? ""}</p>
               <Badge variant="outline" className="text-xs border-primary/40 text-primary">
-                {PERSONA_LABELS[(user?.persona as Persona) ?? "perito"]}
+                {PERSONA_LABELS[persona]}
               </Badge>
             </div>
           </div>
@@ -97,7 +89,7 @@ function ProfileContent() {
             <User className="w-4 h-4 text-primary" />
             Informações Pessoais
           </CardTitle>
-          <CardDescription>Atualize seu nome e persona de acesso na plataforma.</CardDescription>
+          <CardDescription>Atualize seu nome de exibição na plataforma.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-5">
           {/* Name */}
@@ -130,26 +122,21 @@ function ProfileContent() {
 
           <Separator className="bg-border" />
 
-          {/* Persona */}
+          {/* Persona — Read-only, managed by admin */}
           <div className="space-y-2">
             <Label className="text-sm font-medium text-foreground flex items-center gap-1.5">
               <Shield className="w-3.5 h-3.5 text-primary" />
               Persona de acesso
             </Label>
-            <Select value={persona} onValueChange={(v) => setPersona(v as Persona)}>
-              <SelectTrigger className="bg-muted/40 border-border">
-                <SelectValue placeholder="Selecione sua persona" />
-              </SelectTrigger>
-              <SelectContent className="bg-card border-border">
-                {PERSONA_OPTIONS.map((opt) => (
-                  <SelectItem key={opt.value} value={opt.value} className="text-foreground">
-                    {opt.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <p className="text-xs text-muted-foreground">
-              A persona define quais módulos e funcionalidades ficam visíveis no menu lateral.
+            <div className="flex items-center gap-2 px-3 py-2 rounded-md bg-muted/20 border border-border">
+              <span className="text-sm text-foreground flex-1">
+                {PERSONA_LABELS[persona]}
+              </span>
+              <Lock className="w-3.5 h-3.5 text-muted-foreground" />
+            </div>
+            <p className="text-xs text-muted-foreground flex items-center gap-1">
+              <Lock className="w-3 h-3" />
+              A persona é gerenciada pelo administrador do seu Tenant e define quais módulos você pode acessar.
             </p>
           </div>
 
