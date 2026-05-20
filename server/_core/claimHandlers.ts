@@ -87,7 +87,7 @@ async function handleClaimCreated(payload: ClaimCreatedPayload): Promise<void> {
       claimedAmount: Number(claim.claimedAmount ?? 0),
       insuredName: claim.insuredName ?? "",
       policyNumber: claim.policyNumber,
-      incidentDate: claim.incidentDate,
+      incidentDate: claim.incidentDate instanceof Date ? claim.incidentDate.toISOString() : claim.incidentDate,
     });
 
     const { score, riskLevel, factors, modelVersion } = aiResult;

@@ -120,7 +120,13 @@ export async function getClaimsByTenant(
   const db = await getDb();
   if (!db) return [];
   const conditions = [eq(claims.tenantId, tenantId)];
-  if (status) conditions.push(eq(claims.status, status as InsertClaim["status"]));
+  if (status) {
+    const validStatuses = ["ingestion", "triage", "risk_analysis", "investigation", "resolution", "closed", "rejected"] as const;
+    type ClaimStatus = typeof validStatuses[number];
+    if (validStatuses.includes(status as ClaimStatus)) {
+      conditions.push(eq(claims.status, status as ClaimStatus));
+    }
+  }
   return db
     .select()
     .from(claims)
@@ -290,14 +296,14 @@ export async function updateFraudInvestigation(
 // ─── Predictive Analyses ──────────────────────────────────────────────────────
 export async function getPredictiveAnalysisByClaim(claimId: number) {
   const db = await getDb();
-  if (!db) return undefined;
+  if (!db) return null;
   const result = await db
     .select()
     .from(predictiveAnalyses)
     .where(eq(predictiveAnalyses.claimId, claimId))
     .orderBy(desc(predictiveAnalyses.createdAt))
     .limit(1);
-  return result[0];
+  return result[0] ?? null;
 }
 
 export async function createPredictiveAnalysis(data: InsertPredictiveAnalysis) {

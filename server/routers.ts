@@ -449,10 +449,9 @@ export const appRouter = router({
           description: claim.description,
           claimedAmount: Number(claim.claimedAmount ?? 0),
           insuredName: claim.insuredName ?? "",
-          policyNumber: claim.policyNumber,
-          incidentDate: claim.incidentDate,
+                    policyNumber: claim.policyNumber,
+          incidentDate: claim.incidentDate instanceof Date ? claim.incidentDate.toISOString() : claim.incidentDate,
         });
-
         const { score, riskLevel, factors, modelVersion } = aiResult;
 
         await upsertFraudScore({
