@@ -94,6 +94,22 @@ export async function updateTenantPillars(
   await db.update(tenants).set(pillars).where(eq(tenants.id, id));
 }
 
+export async function updateTenantBranding(
+  id: number,
+  branding: {
+    brandName?: string | null;
+    logoUrl?: string | null;
+    primaryColor?: string | null;
+    accentColor?: string | null;
+    faviconUrl?: string | null;
+    supportEmail?: string | null;
+    supportPhone?: string | null;
+  }
+) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  await db.update(tenants).set(branding).where(eq(tenants.id, id));
+}
 // ─── Claims ───────────────────────────────────────────────────────────────────
 export async function getClaimsByTenant(tenantId: number, limit = 50, offset = 0) {
   const db = await getDb();

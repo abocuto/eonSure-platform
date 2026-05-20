@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Link, useLocation } from "wouter";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { getLoginUrl } from "@/const";
@@ -7,12 +7,15 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import {
   LayoutDashboard, ClipboardList, ShieldAlert, GitBranch,
-  BarChart3, MessageSquare, Settings, LogOut, Menu, X,
+  BarChart3, MessageSquare, Settings, LogOut, Menu,
   TrendingUp, Server, Search, ChevronRight, Bell, Zap,
+  Sun, Moon, Palette,
 } from "lucide-react";
 import { PERSONA_LABELS } from "../../../shared/types";
 import type { Persona } from "../../../shared/types";
 import { cn } from "@/lib/utils";
+import { useTheme } from "@/contexts/ThemeContext";
+import { trpc } from "@/lib/trpc";
 
 const NAV_ITEMS = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard, personas: ["c-level", "gerente-sinistros", "analista-fraude", "cio", "perito"] },
@@ -22,6 +25,7 @@ const NAV_ITEMS = [
   { href: "/analytics", label: "Análise Preditiva", icon: BarChart3, personas: ["c-level", "gerente-sinistros", "cio"] },
   { href: "/csat", label: "CSAT", icon: MessageSquare, personas: ["c-level", "gerente-sinistros", "cio"] },
   { href: "/subscriptions", label: "Assinaturas", icon: Settings, personas: ["cio", "c-level"] },
+  { href: "/whitelabel", label: "White-Label", icon: Palette, personas: ["cio", "c-level"] },
 ];
 
 const PERSONA_ICON_MAP: Record<Persona, React.ComponentType<{ className?: string }>> = {
@@ -40,6 +44,34 @@ export default function EonLayout({ children }: EonLayoutProps) {
   const { user, loading, isAuthenticated, logout } = useAuth();
   const [location] = useLocation();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const { theme, toggleTheme } = useTheme();
+  const { data: tenant } = trpc.tenants.getMine.useQuery(undefined, {
+    enabled: isAuthenticated,
+    staleTime: 60_000,
+  });
+
+  // Apply white-label branding in runtime via CSS variables
+  useEffect(() => {
+    const root = document.documentElement;
+    if (tenant?.primaryColor) {
+      root.style.setProperty("--primary", tenant.primaryColor);
+      root.style.setProperty("--ring", tenant.primaryColor);
+      root.style.setProperty("--sidebar-primary", tenant.primaryColor);
+      root.style.setProperty("--sidebar-ring", tenant.primaryColor);
+    } else {
+      root.style.removeProperty("--primary");
+      root.style.removeProperty("--ring");
+      root.style.removeProperty("--sidebar-primary");
+      root.style.removeProperty("--sidebar-ring");
+    }
+    if (tenant?.accentColor) {
+      root.style.setProperty("--accent", tenant.accentColor);
+      root.style.setProperty("--sidebar-accent", tenant.accentColor);
+    } else {
+      root.style.removeProperty("--accent");
+      root.style.removeProperty("--sidebar-accent");
+    }
+  }, [tenant?.primaryColor, tenant?.accentColor]);
 
   if (loading) {
     return (
@@ -84,15 +116,26 @@ export default function EonLayout({ children }: EonLayoutProps) {
       )}
     >
       {/* Logo */}
-      <div className="flex items-center gap-3 px-6 py-5 border-b border-sidebar-border">
-        <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center flex-shrink-0">
-          <Zap className="w-5 h-5 text-primary-foreground" />
+        <div className="flex items-center gap-3 px-6 py-5 border-b border-sidebar-border">
+          {tenant?.logoUrl ? (
+            <img
+              src={tenant.logoUrl}
+              alt={tenant.brandName ?? "Logo"}
+              className="w-8 h-8 rounded-lg object-contain flex-shrink-0"
+              onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
+            />
+          ) : (
+            <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center flex-shrink-0">
+              <Zap className="w-5 h-5 text-primary-foreground" />
+            </div>
+          )}
+          <div>
+            <span className="text-lg font-bold text-sidebar-foreground">
+              {tenant?.brandName ?? "EonSure"}
+            </span>
+            <p className="text-xs text-muted-foreground leading-none">InsurTech Platform</p>
+          </div>
         </div>
-        <div>
-          <span className="text-lg font-bold text-sidebar-foreground">EonSure</span>
-          <p className="text-xs text-muted-foreground leading-none">InsurTech Platform</p>
-        </div>
-      </div>
 
       {/* Persona Badge */}
       <div className="px-4 py-3 border-b border-sidebar-border">
@@ -213,6 +256,19 @@ export default function EonLayout({ children }: EonLayoutProps) {
             </div>
           </div>
           <div className="flex items-center gap-2">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="w-8 h-8 text-muted-foreground hover:text-foreground"
+              onClick={toggleTheme}
+              title={theme === "dark" ? "Mudar para tema claro" : "Mudar para tema escuro"}
+            >
+              {theme === "dark" ? (
+                <Sun className="w-4 h-4 transition-transform duration-200" />
+              ) : (
+                <Moon className="w-4 h-4 transition-transform duration-200" />
+              )}
+            </Button>
             <Button variant="ghost" size="icon" className="w-8 h-8 text-muted-foreground">
               <Bell className="w-4 h-4" />
             </Button>

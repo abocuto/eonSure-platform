@@ -40,6 +40,13 @@ export const tenants = mysqlTable("tenants", {
   name: varchar("name", { length: 256 }).notNull(),
   slug: varchar("slug", { length: 64 }).notNull().unique(),
   logoUrl: text("logoUrl"),
+  // White-label branding
+  brandName: varchar("brandName", { length: 128 }),
+  primaryColor: varchar("primaryColor", { length: 32 }),
+  accentColor: varchar("accentColor", { length: 32 }),
+  faviconUrl: text("faviconUrl"),
+  supportEmail: varchar("supportEmail", { length: 320 }),
+  supportPhone: varchar("supportPhone", { length: 32 }),
   // Pilares tecnológicos ativáveis
   pillarEonicData: boolean("pillarEonicData").default(false).notNull(),
   pillarRulesEngine: boolean("pillarRulesEngine").default(false).notNull(),

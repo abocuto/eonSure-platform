@@ -7,7 +7,7 @@ import { eq } from "drizzle-orm";
 import { users } from "../drizzle/schema";
 import { getDb } from "./db";
 import {
-  upsertUser, getUserByOpenId, getTenants, getTenantById, createTenant, updateTenantPillars,
+  upsertUser, getUserByOpenId, getTenants, getTenantById, createTenant, updateTenantPillars, updateTenantBranding,
   getClaimsByTenant, getClaimById, createClaim, updateClaimStatus, updateClaim,
   getClaimEvents, createClaimEvent,
   getRulesByTenant, createRule, updateRule, deleteRule,
@@ -100,6 +100,25 @@ export const appRouter = router({
           throw new TRPCError({ code: "FORBIDDEN" });
         }
         return updateTenantPillars(tenantId, pillars);
+      }),
+    updateBranding: protectedProcedure
+      .input(
+        z.object({
+          brandName: z.string().max(128).optional().nullable(),
+          logoUrl: z.string().url().optional().nullable(),
+          primaryColor: z.string().max(32).optional().nullable(),
+          accentColor: z.string().max(32).optional().nullable(),
+          faviconUrl: z.string().url().optional().nullable(),
+          supportEmail: z.string().email().optional().nullable(),
+          supportPhone: z.string().max(32).optional().nullable(),
+        })
+      )
+      .mutation(async ({ ctx, input }) => {
+        if (ctx.user.role !== "admin" && ctx.user.persona !== "cio") {
+          throw new TRPCError({ code: "FORBIDDEN" });
+        }
+        const tenantId = getTenantId(ctx.user);
+        return updateTenantBranding(tenantId, input);
       }),
   }),
 

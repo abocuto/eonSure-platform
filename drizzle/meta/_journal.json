@@ -15,6 +15,13 @@
       "when": 1779217421985,
       "tag": "0001_shallow_mastermind",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "5",
+      "when": 1779286716695,
+      "tag": "0002_boring_miek",
+      "breakpoints": true
     }
   ]
 }

@@ -15,6 +15,7 @@ import Analytics from "./pages/Analytics";
 import Csat from "./pages/Csat";
 import Subscriptions from "./pages/Subscriptions";
 import Profile from "./pages/Profile";
+import WhiteLabel from "./pages/WhiteLabel";
 import EonLayout from "./components/EonLayout";
 
 function Router() {
@@ -69,6 +70,7 @@ function Router() {
         </EonLayout>
       </Route>
       <Route path="/profile" component={Profile} />
+      <Route path="/whitelabel" component={WhiteLabel} />
       <Route path="/404" component={NotFound} />
       <Route component={NotFound} />
     </Switch>
@@ -78,7 +80,7 @@ function Router() {
 function App() {
   return (
     <ErrorBoundary>
-      <ThemeProvider defaultTheme="dark">
+      <ThemeProvider defaultTheme="dark" switchable>
         <TooltipProvider>
           <Toaster />
           <Router />
