@@ -39,22 +39,31 @@ function formatMonthLabel(ym: string): string {
   return date.toLocaleDateString("pt-BR", { month: "short" }).replace(".", "");
 }
 
+const CAN_READ_ANALYTICS: Persona[] = ["c-level", "gerente-sinistros", "cio"];
+
 export default function Dashboard() {
   const { user } = useAuth();
   const persona = (user?.persona ?? "perito") as Persona;
+  const canReadAnalytics = CAN_READ_ANALYTICS.includes(persona);
 
   const {
     data: kpis,
     isLoading: kpisLoading,
     refetch,
-  } = trpc.analytics.getKpis.useQuery(undefined, { refetchInterval: 30_000 });
+  } = trpc.analytics.getKpis.useQuery(undefined, {
+    refetchInterval: canReadAnalytics ? 30_000 : false,
+    enabled: canReadAnalytics,
+  });
 
   const {
     data: trendRaw,
     isLoading: trendLoading,
   } = trpc.analytics.getKpisTrend.useQuery(
     { months: 6 },
-    { refetchInterval: 30_000 }
+    {
+      refetchInterval: canReadAnalytics ? 30_000 : false,
+      enabled: canReadAnalytics,
+    }
   );
 
   const { data: claims, isLoading: claimsLoading } = trpc.claims.list.useQuery({ limit: 5 });
@@ -107,7 +116,7 @@ export default function Dashboard() {
 
       {/* KPI Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
-        {kpisLoading ? (
+        {canReadAnalytics && kpisLoading ? (
           Array(4).fill(0).map((_, i) => (
             <Card key={i} className="p-5 border border-border">
               <Skeleton className="w-10 h-10 rounded-lg mb-3" />
@@ -117,45 +126,49 @@ export default function Dashboard() {
           ))
         ) : (
           <>
-            <KpiCard
-              title="Eficiência Financeira"
-              value={`${financialEfficiency}%`}
-              icon={TrendingUp}
-              trend={4.2}
-              trendLabel="vs. mês anterior"
-              description="Redução de custo total de sinistros"
-              highlight
-            />
-            <KpiCard
-              title="TMR — Tempo Médio de Resolução"
-              value={kpis?.avgResolutionDays ?? "—"}
-              unit="dias"
-              icon={Clock}
-              trend={-8.5}
-              trendLabel="vs. mês anterior"
-              description="Média de dias para encerramento"
-            />
-            <KpiCard
-              title="Acurácia Preditiva"
-              value="82%"
-              icon={ShieldCheck}
-              trend={2.1}
-              trendLabel="vs. mês anterior"
-              description="Precisão do modelo de risco"
-            />
+            {canReadAnalytics && (
+              <>
+                <KpiCard
+                  title="Eficiência Financeira"
+                  value={`${financialEfficiency}%`}
+                  icon={TrendingUp}
+                  trend={4.2}
+                  trendLabel="vs. mês anterior"
+                  description="Redução de custo total de sinistros"
+                  highlight
+                />
+                <KpiCard
+                  title="TMR — Tempo Médio de Resolução"
+                  value={kpis?.avgResolutionDays ?? "—"}
+                  unit="dias"
+                  icon={Clock}
+                  trend={-8.5}
+                  trendLabel="vs. mês anterior"
+                  description="Média de dias para encerramento"
+                />
+                <KpiCard
+                  title="Acurácia Preditiva"
+                  value="82%"
+                  icon={ShieldCheck}
+                  trend={2.1}
+                  trendLabel="vs. mês anterior"
+                  description="Precisão do modelo de risco"
+                />
+              </>
+            )}
             <KpiCard
               title="Sinistros Ativos"
-              value={kpis?.openClaims ?? 0}
+              value={kpis?.openClaims ?? claims?.length ?? 0}
               icon={ClipboardList}
-              trendLabel={`${kpis?.totalClaims ?? 0} total`}
+              trendLabel={kpis ? `${kpis.totalClaims} total` : `${claims?.length ?? 0} carregados`}
               description="Sinistros em processamento"
             />
           </>
         )}
       </div>
 
-      {/* Charts Row */}
-      <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
+      {/* Charts Row — only for personas with analytics:read */}
+      {canReadAnalytics && <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
         {/* Trend Chart — Real Data */}
         <Card className="xl:col-span-2 p-5 border border-border bg-card">
           <div className="flex items-center justify-between mb-5">
@@ -259,9 +272,8 @@ export default function Dashboard() {
               <p className="text-xs text-muted-foreground">Nenhum sinistro analisado ainda</p>
             </div>
           )}
-        </Card>
-      </div>
-
+                </Card>
+      </div>}
       {/* Recent Claims */}
       <Card className="border border-border bg-card">
         <div className="flex items-center justify-between px-5 py-4 border-b border-border">
