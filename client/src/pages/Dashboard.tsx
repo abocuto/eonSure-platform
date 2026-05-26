@@ -42,9 +42,10 @@ function formatMonthLabel(ym: string): string {
 const CAN_READ_ANALYTICS: Persona[] = ["c-level", "gerente-sinistros", "cio"];
 
 export default function Dashboard() {
-  const { user } = useAuth();
+  const { user, loading: authLoading } = useAuth();
   const persona = (user?.persona ?? "perito") as Persona;
-  const canReadAnalytics = CAN_READ_ANALYTICS.includes(persona);
+  // Only evaluate permission AFTER auth has resolved to avoid firing queries before user is known
+  const canReadAnalytics = !authLoading && !!user && CAN_READ_ANALYTICS.includes(persona);
 
   const {
     data: kpis,

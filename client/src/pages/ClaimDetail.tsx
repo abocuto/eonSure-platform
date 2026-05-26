@@ -13,8 +13,9 @@ import {
   CheckCircle2, XCircle, ArrowRight, Clock, User, Zap,
   AlertTriangle, FileText, Loader2, Sparkles,
 } from "lucide-react";
+import { useAuth } from "@/_core/hooks/useAuth";
 import { CLAIM_TYPE_LABELS, CLAIM_STATUS_LABELS, CLAIM_STATUS_ORDER } from "../../../shared/types";
-import type { ClaimType, ClaimStatus } from "../../../shared/types";
+import type { ClaimType, ClaimStatus, Persona as ClaimDetailPersona } from "../../../shared/types";
 import { cn } from "@/lib/utils";
 
 const STATUS_NEXT: Partial<Record<ClaimStatus, ClaimStatus>> = {
@@ -32,6 +33,12 @@ export default function ClaimDetail({ id }: ClaimDetailProps) {
   const [notes, setNotes] = useState("");
   const [aiProcessing, setAiProcessing] = useState(false);
   const utils = trpc.useUtils();
+  const { user, loading: authLoading } = useAuth();
+  const persona = (user?.persona ?? "perito") as ClaimDetailPersona;
+  const userReady = !authLoading && !!user;
+  const canReadRules = userReady && ["c-level", "gerente-sinistros", "cio"].includes(persona);
+  const canReadFraud = userReady && ["c-level", "gerente-sinistros", "analista-fraude"].includes(persona);
+  const canReadAnalytics = userReady && ["c-level", "gerente-sinistros", "cio"].includes(persona);
 
   // Polling interval: 3s when AI is processing, 0 (disabled) otherwise
   const pollInterval = aiProcessing ? 3000 : 0;
@@ -46,15 +53,15 @@ export default function ClaimDetail({ id }: ClaimDetailProps) {
   );
   const { data: ruleLogs } = trpc.rules.getLogs.useQuery(
     { claimId: id },
-    { refetchInterval: pollInterval }
+    { refetchInterval: canReadRules ? pollInterval : false, enabled: canReadRules }
   );
   const { data: fraudScores } = trpc.fraud.getScoresByClaim.useQuery(
     { claimId: id },
-    { refetchInterval: pollInterval }
+    { refetchInterval: canReadFraud ? pollInterval : false, enabled: canReadFraud }
   );
   const { data: prediction } = trpc.analytics.getPredictiveAnalysis.useQuery(
     { claimId: id },
-    { refetchInterval: pollInterval }
+    { refetchInterval: canReadAnalytics ? pollInterval : false, enabled: canReadAnalytics }
   );
 
   // Stop polling once fraud score and events are populated
