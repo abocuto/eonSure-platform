@@ -446,6 +446,13 @@ export async function getKpisByTenant(tenantId: number) {
     .from(claims)
     .where(and(eq(claims.tenantId, tenantId), eq(claims.status, "closed")));
 
+  // Count per lifecycle status
+  const [ingestionCount] = await db.select({ count: count() }).from(claims).where(and(eq(claims.tenantId, tenantId), eq(claims.status, "ingestion")));
+  const [triageCount] = await db.select({ count: count() }).from(claims).where(and(eq(claims.tenantId, tenantId), eq(claims.status, "triage")));
+  const [riskCount] = await db.select({ count: count() }).from(claims).where(and(eq(claims.tenantId, tenantId), eq(claims.status, "risk_analysis")));
+  const [resolutionCount] = await db.select({ count: count() }).from(claims).where(and(eq(claims.tenantId, tenantId), eq(claims.status, "resolution")));
+  const [rejectedCount] = await db.select({ count: count() }).from(claims).where(and(eq(claims.tenantId, tenantId), eq(claims.status, "rejected")));
+
   const [fraudStats] = await db
     .select({
       greenCount: sql<number>`SUM(CASE WHEN fraudRisk = 'green' THEN 1 ELSE 0 END)`,
@@ -474,6 +481,14 @@ export async function getKpisByTenant(tenantId: number) {
     totalClaims: totalClaims?.count ?? 0,
     openClaims: openClaims?.count ?? 0,
     closedClaims: closedClaims?.count ?? 0,
+    statusBreakdown: {
+      ingestion: ingestionCount?.count ?? 0,
+      triage: triageCount?.count ?? 0,
+      risk_analysis: riskCount?.count ?? 0,
+      resolution: resolutionCount?.count ?? 0,
+      closed: closedClaims?.count ?? 0,
+      rejected: rejectedCount?.count ?? 0,
+    },
     fraudStats: {
       green: Number(fraudStats?.greenCount ?? 0),
       yellow: Number(fraudStats?.yellowCount ?? 0),
@@ -485,4 +500,19 @@ export async function getKpisByTenant(tenantId: number) {
       totalApproved: Number(financialStats?.totalApproved ?? 0),
     },
   };
+}
+
+// Lightweight status summary — available to all personas with claims:read
+export async function getClaimsStatusSummary(tenantId: number) {
+  const db = await getDb();
+  if (!db) return { ingestion: 0, triage: 0, risk_analysis: 0, resolution: 0, closed: 0, rejected: 0 };
+
+  const statuses = ["ingestion", "triage", "risk_analysis", "resolution", "closed", "rejected"] as const;
+  const results = await Promise.all(
+    statuses.map((s) =>
+      db.select({ count: count() }).from(claims).where(and(eq(claims.tenantId, tenantId), eq(claims.status, s)))
+        .then(([r]) => ({ status: s, count: r?.count ?? 0 }))
+    )
+  );
+  return Object.fromEntries(results.map((r) => [r.status, r.count])) as Record<typeof statuses[number], number>;
 }

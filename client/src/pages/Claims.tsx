@@ -7,12 +7,22 @@ import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { RiskBadge, StatusPill, SectionHeader, EmptyState } from "@/components/EonComponents";
 import { ClipboardList, Plus, Search, Filter } from "lucide-react";
-import { CLAIM_TYPE_LABELS } from "../../../shared/types";
-import type { ClaimType } from "../../../shared/types";
+import { CLAIM_TYPE_LABELS, CLAIM_STATUS_LABELS } from "../../../shared/types";
+import type { ClaimType, ClaimStatus } from "../../../shared/types";
+
+const VALID_STATUSES: ClaimStatus[] = ["ingestion", "triage", "risk_analysis", "resolution", "closed", "rejected"];
 
 export default function Claims() {
   const [search, setSearch] = useState("");
-  const { data: claims, isLoading } = trpc.claims.list.useQuery({ limit: 50 });
+
+  // Read ?status= query param from URL for direct filtering via Dashboard cards
+  const urlParams = new URLSearchParams(window.location.search);
+  const urlStatus = urlParams.get("status") as ClaimStatus | null;
+  const [statusFilter, setStatusFilter] = useState<ClaimStatus | undefined>(
+    urlStatus && VALID_STATUSES.includes(urlStatus) ? urlStatus : undefined
+  );
+
+  const { data: claims, isLoading } = trpc.claims.list.useQuery({ limit: 50, status: statusFilter });
 
   const filtered = claims?.filter((c) =>
     !search ||
@@ -48,10 +58,27 @@ export default function Claims() {
             className="pl-9 bg-card border-border text-sm"
           />
         </div>
-        <Button variant="outline" size="sm" className="border-border text-muted-foreground">
-          <Filter className="w-4 h-4 mr-1.5" />
-          Filtros
-        </Button>
+        <div className="flex gap-1.5 flex-wrap">
+          <Button
+            variant={statusFilter === undefined ? "default" : "outline"}
+            size="sm"
+            className="text-xs h-8"
+            onClick={() => setStatusFilter(undefined)}
+          >
+            Todos
+          </Button>
+          {VALID_STATUSES.map((s) => (
+            <Button
+              key={s}
+              variant={statusFilter === s ? "default" : "outline"}
+              size="sm"
+              className="text-xs h-8"
+              onClick={() => setStatusFilter(statusFilter === s ? undefined : s)}
+            >
+              {CLAIM_STATUS_LABELS[s] ?? s}
+            </Button>
+          ))}
+        </div>
       </div>
 
       {/* Claims Table */}

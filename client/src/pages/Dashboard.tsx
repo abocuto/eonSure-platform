@@ -8,6 +8,7 @@ import { Link } from "wouter";
 import {
   TrendingUp, Clock, ShieldCheck, ClipboardList, AlertTriangle,
   CheckCircle2, BarChart3, ArrowRight, RefreshCw, Zap,
+  FileSearch, XCircle, Filter, Inbox, GitBranch, Scale,
 } from "lucide-react";
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip,
@@ -46,6 +47,7 @@ export default function Dashboard() {
   const persona = (user?.persona ?? "perito") as Persona;
   // Only evaluate permission AFTER auth has resolved to avoid firing queries before user is known
   const canReadAnalytics = !authLoading && !!user && CAN_READ_ANALYTICS.includes(persona);
+  const userReady = !authLoading && !!user;
 
   const {
     data: kpis,
@@ -68,6 +70,12 @@ export default function Dashboard() {
   );
 
   const { data: claims, isLoading: claimsLoading } = trpc.claims.list.useQuery({ limit: 5 });
+
+  // Status summary — available to all personas with claims:read (no analytics:read required)
+  const { data: statusSummary, isLoading: statusLoading } = trpc.claims.getStatusSummary.useQuery(
+    undefined,
+    { enabled: userReady, refetchInterval: 30_000 }
+  );
 
   // Transform trend data for Recharts
   const trendData = useMemo(() => {
@@ -166,6 +174,56 @@ export default function Dashboard() {
             />
           </>
         )}
+      </div>
+
+      {/* Status Breakdown Cards */}
+      <div>
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
+            <Filter className="w-4 h-4 text-primary" />
+            Sinistros por Etapa
+          </h3>
+          <Link href="/claims">
+            <Button variant="ghost" size="sm" className="text-primary hover:text-primary/80 text-xs h-7">
+              Gerenciar todos
+              <ArrowRight className="w-3 h-3 ml-1" />
+            </Button>
+          </Link>
+        </div>
+        <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-3">
+          {([
+            { key: "ingestion",    label: "Ingestão",       icon: Inbox,        color: "text-sky-400",    bg: "bg-sky-400/10",    border: "border-sky-400/20" },
+            { key: "triage",       label: "Triagem",        icon: GitBranch,    color: "text-violet-400", bg: "bg-violet-400/10", border: "border-violet-400/20" },
+            { key: "risk_analysis",label: "Análise de Risco",icon: FileSearch,  color: "text-amber-400",  bg: "bg-amber-400/10",  border: "border-amber-400/20" },
+            { key: "resolution",   label: "Resolução",      icon: Scale,        color: "text-primary",    bg: "bg-primary/10",    border: "border-primary/20" },
+            { key: "closed",       label: "Encerrado",      icon: CheckCircle2, color: "text-green-400",  bg: "bg-green-400/10",  border: "border-green-400/20" },
+            { key: "rejected",     label: "Rejeitado",      icon: XCircle,      color: "text-red-400",    bg: "bg-red-400/10",    border: "border-red-400/20" },
+          ] as const).map(({ key, label, icon: Icon, color, bg, border }) => {
+            const statusCount = statusSummary?.[key] ?? null;
+            return (
+              <Link key={key} href={`/claims?status=${key}`}>
+                <Card className={`p-4 border ${border} bg-card hover:bg-accent/20 transition-all cursor-pointer group`}>
+                  <div className={`w-8 h-8 rounded-lg ${bg} flex items-center justify-center mb-3`}>
+                    <Icon className={`w-4 h-4 ${color}`} />
+                  </div>
+                  <div className="text-xl font-bold text-foreground mb-0.5">
+                    {statusLoading ? (
+                      <Skeleton className="h-6 w-10" />
+                    ) : statusCount !== null ? (
+                      statusCount
+                    ) : (
+                      "—"
+                    )}
+                  </div>
+                  <div className="text-xs text-muted-foreground leading-tight">{label}</div>
+                  <div className={`text-xs ${color} opacity-0 group-hover:opacity-100 transition-opacity mt-1 flex items-center gap-1`}>
+                    Ver sinistros <ArrowRight className="w-3 h-3" />
+                  </div>
+                </Card>
+              </Link>
+            );
+          })}
+        </div>
       </div>
 
       {/* Charts Row — only for personas with analytics:read */}

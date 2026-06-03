@@ -17,6 +17,7 @@ import {
   getCsatByTenant, createCsatResponse,
   getSubscriptionByTenant, upsertSubscription,
   getKpisByTenant, getKpisTrend,
+  getClaimsStatusSummary,
 } from "./db";
 import { TRPCError } from "@trpc/server";
 import { requirePermission } from "./_core/rbac";
@@ -293,6 +294,13 @@ export const appRouter = router({
         const tenantId = getTenantId(ctx.user);
         return getClaimEvents(input.claimId, tenantId);
       }),
+
+    // Lightweight status summary — available to all personas with claims:read
+    getStatusSummary: protectedProcedure.query(async ({ ctx }) => {
+      requirePermission(ctx.user, "claims:read");
+      const tenantId = getTenantId(ctx.user);
+      return getClaimsStatusSummary(tenantId);
+    }),
   }),
 
   // ─── Rules (Motor de Regras No-Code) ──────────────────────────────────────
