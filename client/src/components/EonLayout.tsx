@@ -9,7 +9,7 @@ import {
   LayoutDashboard, ClipboardList, ShieldAlert, GitBranch,
   BarChart3, MessageSquare, Settings, LogOut, Menu,
   TrendingUp, Server, Search, ChevronRight, Bell, Zap,
-  Sun, Moon, Palette, Users,
+  Sun, Moon, Palette, Users, Building2,
 } from "lucide-react";
 import { PERSONA_LABELS } from "../../../shared/types";
 import type { Persona } from "../../../shared/types";
@@ -127,7 +127,11 @@ export default function EonLayout({ children }: EonLayoutProps) {
             />
           ) : (
             <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center flex-shrink-0">
-              <Zap className="w-5 h-5 text-primary-foreground" />
+              {tenant ? (
+                <Building2 className="w-5 h-5 text-primary-foreground" />
+              ) : (
+                <Zap className="w-5 h-5 text-primary-foreground" />
+              )}
             </div>
           )}
           <div>

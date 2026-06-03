@@ -132,20 +132,20 @@
 - [x] Dashboard: race condition causava analytics.getKpis ser disparado para persona perito antes do auth resolver; corrigido com persona derivada somente pós-auth e retry:false
 
 ## Gestão Multi-Tenant e Usuários (Sprint 3)
-- [ ] Backend: procedure createTenantUser para criar usuário vinculado a tenant
-- [ ] Backend: procedure getTenantUsers para listar usuários do tenant (C-Level e CIO)
-- [ ] Backend: procedure updateTenantUser para editar role/persona de usuário
-- [ ] Backend: procedure removeTenantUser para remover usuário do tenant
-- [ ] Backend: procedure bulkImportUsers para importar usuários em lote via XLSX/CSV
-- [ ] Backend: procedure getMegaAdminTenantLeaders para mega-admin ver apenas C-Level e CIO por tenant
-- [ ] Backend: createTenant expandido para incluir criação do primeiro usuário C-Level
-- [ ] Mega-admin: modal de criação de tenant em 2 etapas (dados do tenant + primeiro usuário C-Level)
-- [ ] Mega-admin: lista de usuários filtrada por C-Level/CIO separados por cliente
-- [ ] Página /users: gerenciamento de usuários do tenant para C-Level e CIO
-- [ ] Página /users: importação em lote via XLSX/CSV com preview e atribuição de nível
-- [ ] Sidebar EonLayout: logo do cliente com fallback ícone genérico (Building2)
-- [ ] Sidebar EonLayout: texto "powered by EonSure" abaixo da marca do cliente
-- [ ] Sidebar EonLayout: identificação automática do tenant pelo login (tenantId do usuário)
-- [ ] Isolamento multi-tenant: todas as queries usam tenantId do usuário autenticado
-- [ ] Rota /users adicionada no App.tsx e ProtectedRoute (c-level, cio)
-- [ ] Navegação: link "Usuários" adicionado no EonLayout para c-level e cio
+- [x] Backend: procedure createTenantUser para criar usuário vinculado a tenant
+- [x] Backend: procedure getTenantUsers para listar usuários do tenant (C-Level e CIO)
+- [x] Backend: procedure updateTenantUser para editar role/persona de usuário
+- [x] Backend: procedure removeTenantUser para remover usuário do tenant
+- [x] Backend: procedure bulkImportUsers para importar usuários em lote via XLSX/CSV
+- [x] Backend: procedure getMegaAdminTenantLeaders para mega-admin ver apenas C-Level e CIO por tenant
+- [x] Backend: createTenant expandido para incluir criação do primeiro usuário C-Level
+- [x] Mega-admin: modal de criação de tenant em 2 etapas (dados do tenant + primeiro usuário C-Level)
+- [x] Mega-admin: lista de usuários filtrada por C-Level/CIO separados por cliente
+- [x] Página /users: gerenciamento de usuários do tenant para C-Level e CIO
+- [x] Página /users: importação em lote via XLSX/CSV com preview e atribuição de nível
+- [x] Sidebar EonLayout: logo do cliente com fallback ícone genérico (Building2)
+- [x] Sidebar EonLayout: texto "powered by EonSure" abaixo da marca do cliente
+- [x] Sidebar EonLayout: identificação automática do tenant pelo login (tenantId do usuário)
+- [x] Isolamento multi-tenant: todas as queries usam tenantId do usuário autenticado
+- [x] Rota /users adicionada no App.tsx e ProtectedRoute (c-level, cio)
+- [x] Navegação: link "Usuários" adicionado no EonLayout para c-level e cio

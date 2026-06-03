@@ -22,6 +22,7 @@ const ROUTE_PERSONAS: Record<string, Persona[]> = {
   "/csat":          ["c-level", "gerente-sinistros", "cio"],
   "/subscriptions": ["c-level", "cio"],
   "/whitelabel":    ["c-level", "cio"],
+  "/users":          ["c-level", "cio"],
 };
 
 interface ProtectedRouteProps {
