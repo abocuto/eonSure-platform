@@ -32,12 +32,17 @@ export function useAuth(options?: UseAuthOptions) {
         error instanceof TRPCClientError &&
         error.data?.code === "UNAUTHORIZED"
       ) {
-        return;
+        // already logged out — proceed with cleanup
+      } else {
+        console.error("[Logout] Mutation failed", error);
       }
-      throw error;
     } finally {
+      // Clear stored JWT token from localStorage so Authorization header is no longer sent
+      try { localStorage.removeItem("eon_auth_token"); } catch { /* ignore */ }
+      try { localStorage.removeItem("manus-runtime-user-info"); } catch { /* ignore */ }
       utils.auth.me.setData(undefined, null);
-      await utils.auth.me.invalidate();
+      // Hard redirect to home — clears all React Query cache and forces fresh auth check
+      window.location.href = "/";
     }
   }, [logoutMutation, utils]);
 

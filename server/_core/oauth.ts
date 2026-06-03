@@ -30,12 +30,8 @@ const MEGA_ADMIN_USER = {
 };
 
 export function registerOAuthRoutes(app: Express) {
-  // Demo login route — only available in development mode
+  // Demo login route — available in all environments for this demo platform
   app.get("/api/demo-login", async (req: Request, res: Response) => {
-    if (process.env.NODE_ENV === "production") {
-      res.status(403).json({ error: "Demo login not available in production" });
-      return;
-    }
     const persona = getQueryParam(req, "persona") ?? "c-level";
     const demoUser = DEMO_PERSONAS.find((p) => p.persona === persona) ?? DEMO_PERSONAS[0];
     try {
@@ -60,7 +56,16 @@ export function registerOAuthRoutes(app: Express) {
         res.json({ token: sessionToken, user: demoUser });
         return;
       }
-      res.redirect(302, "/dashboard");
+      // For browser navigation: inject token into localStorage before redirecting
+      // This ensures the Authorization header fallback is set even if cookies are blocked
+      const redirectTo = "/dashboard";
+      res.send(`<!DOCTYPE html><html><head><title>Entrando...</title></head><body>
+        <script>
+          try { localStorage.setItem('eon_auth_token', ${JSON.stringify(sessionToken)}); } catch(e) {}
+          window.location.replace(${JSON.stringify(redirectTo)});
+        </script>
+        <noscript><meta http-equiv="refresh" content="0;url=${redirectTo}"></noscript>
+      </body></html>`);
     } catch (error) {
       console.error("[Demo Login] Failed", error);
       res.status(500).json({ error: "Demo login failed", details: String(error) });
@@ -96,7 +101,15 @@ export function registerOAuthRoutes(app: Express) {
         res.json({ token: sessionToken, user: MEGA_ADMIN_USER });
         return;
       }
-      res.redirect(302, "/mega-admin");
+      // For browser navigation: inject token into localStorage before redirecting
+      const redirectTo = "/mega-admin";
+      res.send(`<!DOCTYPE html><html><head><title>Entrando...</title></head><body>
+        <script>
+          try { localStorage.setItem('eon_auth_token', ${JSON.stringify(sessionToken)}); } catch(e) {}
+          window.location.replace(${JSON.stringify(redirectTo)});
+        </script>
+        <noscript><meta http-equiv="refresh" content="0;url=${redirectTo}"></noscript>
+      </body></html>`);
     } catch (error) {
       console.error("[Mega-Admin Login] Failed", error);
       res.status(500).json({ error: "Login falhou.", details: String(error) });
