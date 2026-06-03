@@ -18,9 +18,13 @@ import {
   getSubscriptionByTenant, upsertSubscription,
   getKpisByTenant, getKpisTrend,
   getClaimsStatusSummary,
+  getAllTenantsWithStats, getTenantFullDetail, updateTenantByAdmin,
+  updateSubscriptionByAdmin, updateUserByAdmin, removeUserFromTenant,
+  createAuditLog, getAuditLogs, getPlatformMetrics,
 } from "./db";
 import { TRPCError } from "@trpc/server";
-import { requirePermission } from "./_core/rbac";
+import { requirePermission, requireMegaAdmin } from "./_core/rbac";
+import { megaAdminRouter } from "./routers/megaAdmin";
 import { analyzeFraudWithAI, generatePredictionWithAI } from "./_core/aiService";
 import { eventBus } from "./_core/eventBus";
 
@@ -31,6 +35,7 @@ function getTenantId(user: { tenantId?: number | null }) {
 
 export const appRouter = router({
   system: systemRouter,
+  megaAdmin: megaAdminRouter,
 
   // ─── Auth ──────────────────────────────────────────────────────────────────
   auth: router({

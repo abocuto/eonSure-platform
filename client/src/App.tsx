@@ -17,6 +17,9 @@ import Csat from "./pages/Csat";
 import Subscriptions from "./pages/Subscriptions";
 import Profile from "./pages/Profile";
 import WhiteLabel from "./pages/WhiteLabel";
+import MegaAdmin from "./pages/MegaAdmin";
+import MegaAdminTenant from "./pages/MegaAdminTenant";
+import MegaAdminAuditLog from "./pages/MegaAdminAuditLog";
 import EonLayout from "./components/EonLayout";
 
 function Router() {
@@ -107,6 +110,27 @@ function Router() {
       </Route>
 
       <Route path="/profile" component={Profile} />
+
+      {/* Mega-Admin routes - sem EonLayout, layout próprio */}
+      <Route path="/mega-admin">
+        <ProtectedRoute path="/mega-admin">
+          <MegaAdmin />
+        </ProtectedRoute>
+      </Route>
+
+      <Route path="/mega-admin/tenant/:id">
+        {(params) => (
+          <ProtectedRoute path="/mega-admin">
+            <MegaAdminTenant />
+          </ProtectedRoute>
+        )}
+      </Route>
+
+      <Route path="/mega-admin/audit">
+        <ProtectedRoute path="/mega-admin">
+          <MegaAdminAuditLog />
+        </ProtectedRoute>
+      </Route>
       <Route path="/404" component={NotFound} />
       <Route component={NotFound} />
     </Switch>

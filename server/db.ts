@@ -2,7 +2,7 @@ import { eq, and, desc, count, avg, sql, gte, lte } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
 import {
   users, tenants, claims, claimEvents, rules, ruleLogs,
-  fraudScores, predictiveAnalyses, csatResponses, subscriptions,
+  fraudScores, predictiveAnalyses, csatResponses, subscriptions, auditLogs,
   InsertUser, InsertTenant, InsertClaim, InsertClaimEvent,
   InsertRule, InsertRuleLog, InsertFraudScore, InsertPredictiveAnalysis,
   InsertCsatResponse, InsertSubscription,
@@ -515,4 +515,166 @@ export async function getClaimsStatusSummary(tenantId: number) {
     )
   );
   return Object.fromEntries(results.map((r) => [r.status, r.count])) as Record<typeof statuses[number], number>;
+}
+
+// ─── Mega-Admin Queries ───────────────────────────────────────────────────────
+
+/** Lista todos os tenants com contagem de usuários e sinistros */
+export async function getAllTenantsWithStats() {
+  const db = await getDb();
+  if (!db) return [];
+
+  const allTenants = await db.select().from(tenants).orderBy(desc(tenants.createdAt));
+
+  const stats = await Promise.all(
+    allTenants.map(async (t) => {
+      const [userCount] = await db.select({ count: count() }).from(users).where(eq(users.tenantId, t.id));
+      const [claimCount] = await db.select({ count: count() }).from(claims).where(eq(claims.tenantId, t.id));
+      return {
+        ...t,
+        userCount: userCount?.count ?? 0,
+        claimCount: claimCount?.count ?? 0,
+      };
+    })
+  );
+  return stats;
+}
+
+/** Retorna um tenant com todos os detalhes: usuários, assinatura e métricas */
+export async function getTenantFullDetail(tenantId: number) {
+  const db = await getDb();
+  if (!db) return null;
+
+  const [tenant] = await db.select().from(tenants).where(eq(tenants.id, tenantId)).limit(1);
+  if (!tenant) return null;
+
+  const tenantUsers = await db.select().from(users).where(eq(users.tenantId, tenantId)).orderBy(desc(users.lastSignedIn));
+  const [sub] = await db.select().from(subscriptions).where(eq(subscriptions.tenantId, tenantId)).limit(1);
+  const [claimCount] = await db.select({ count: count() }).from(claims).where(eq(claims.tenantId, tenantId));
+  const [openCount] = await db.select({ count: count() }).from(claims).where(and(eq(claims.tenantId, tenantId), eq(claims.status, "ingestion")));
+
+  return {
+    tenant,
+    users: tenantUsers,
+    subscription: sub ?? null,
+    stats: {
+      totalClaims: claimCount?.count ?? 0,
+      openClaims: openCount?.count ?? 0,
+    },
+  };
+}
+
+/** Atualiza dados de cadastro de um tenant (mega-admin) */
+export async function updateTenantByAdmin(tenantId: number, data: Partial<{
+  name: string;
+  isActive: boolean;
+  subscriptionPlan: "starter" | "professional" | "enterprise";
+  supportEmail: string;
+  supportPhone: string;
+}>) {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(tenants).set({ ...data, updatedAt: new Date() }).where(eq(tenants.id, tenantId));
+}
+
+/** Atualiza a assinatura de um tenant (mega-admin) */
+export async function updateSubscriptionByAdmin(tenantId: number, data: Partial<{
+  plan: "starter" | "professional" | "enterprise";
+  status: "active" | "suspended" | "cancelled" | "trial";
+  maxClaims: number;
+  maxUsers: number;
+  billingCycle: "monthly" | "annual";
+  pillarEonicData: boolean;
+  pillarRulesEngine: boolean;
+  pillarFraudML: boolean;
+  pillarPredictive: boolean;
+}>) {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(subscriptions).set({ ...data, updatedAt: new Date() }).where(eq(subscriptions.tenantId, tenantId));
+}
+
+/** Atualiza role/persona de um usuário (mega-admin) */
+export async function updateUserByAdmin(userId: number, data: Partial<{
+  name: string;
+  role: "user" | "admin" | "mega-admin";
+  persona: "c-level" | "gerente-sinistros" | "analista-fraude" | "cio" | "perito";
+  tenantId: number | null;
+}>) {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(users).set({ ...data, updatedAt: new Date() }).where(eq(users.id, userId));
+}
+
+/** Remove um usuário de um tenant (soft delete via tenantId = null) */
+export async function removeUserFromTenant(userId: number) {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(users).set({ tenantId: null, updatedAt: new Date() }).where(eq(users.id, userId));
+}
+
+/** Registra uma ação no audit log */
+export async function createAuditLog(data: {
+  adminId: number;
+  adminName?: string;
+  adminEmail?: string;
+  action: string;
+  resource: string;
+  resourceId?: number;
+  resourceName?: string;
+  targetTenantId?: number;
+  targetTenantName?: string;
+  previousState?: unknown;
+  newState?: unknown;
+  ipAddress?: string;
+  userAgent?: string;
+  severity?: "info" | "warning" | "critical";
+  notes?: string;
+}) {
+  const db = await getDb();
+  if (!db) return;
+  await db.insert(auditLogs).values({
+    adminId: data.adminId,
+    adminName: data.adminName,
+    adminEmail: data.adminEmail,
+    action: data.action,
+    resource: data.resource,
+    resourceId: data.resourceId,
+    resourceName: data.resourceName,
+    targetTenantId: data.targetTenantId,
+    targetTenantName: data.targetTenantName,
+    previousState: data.previousState as Record<string, unknown> | null,
+    newState: data.newState as Record<string, unknown> | null,
+    ipAddress: data.ipAddress,
+    userAgent: data.userAgent,
+    severity: data.severity ?? "info",
+    notes: data.notes,
+  });
+}
+
+/** Lista o audit log com paginação */
+export async function getAuditLogs(limit = 50, offset = 0) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(auditLogs).orderBy(desc(auditLogs.createdAt)).limit(limit).offset(offset);
+}
+
+/** Métricas globais da plataforma */
+export async function getPlatformMetrics() {
+  const db = await getDb();
+  if (!db) return { totalTenants: 0, activeTenants: 0, totalUsers: 0, totalClaims: 0, openClaims: 0 };
+
+  const [totalTenants] = await db.select({ count: count() }).from(tenants);
+  const [activeTenants] = await db.select({ count: count() }).from(tenants).where(eq(tenants.isActive, true));
+  const [totalUsers] = await db.select({ count: count() }).from(users);
+  const [totalClaims] = await db.select({ count: count() }).from(claims);
+  const [openClaims] = await db.select({ count: count() }).from(claims).where(eq(claims.status, "ingestion"));
+
+  return {
+    totalTenants: totalTenants?.count ?? 0,
+    activeTenants: activeTenants?.count ?? 0,
+    totalUsers: totalUsers?.count ?? 0,
+    totalClaims: totalClaims?.count ?? 0,
+    openClaims: openClaims?.count ?? 0,
+  };
 }

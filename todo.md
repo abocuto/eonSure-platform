@@ -99,3 +99,17 @@
 - [x] Cards de status de sinistros no Dashboard com contadores e link filtrado para /claims
 - [x] Cards de status do Dashboard exibem contadores para todas as personas (não apenas analytics:read)
 - [x] Página /claims lê query param ?status= e aplica filtro automaticamente ao abrir via cards
+
+## Mega-Admin
+- [x] Adicionar role "mega-admin" no schema de users e migrar banco
+- [x] Criar tabela audit_logs para rastrear todas as ações do mega-admin
+- [x] Criar queries de administração global no db.ts (listagem de tenants, stats, usuários por tenant)
+- [x] Criar router mega-admin com procedures protegidas por role mega-admin
+- [x] Criar rota /api/mega-admin-login com autenticação por secret
+- [x] Criar página /mega-admin com listagem de todos os tenants e métricas globais
+- [x] Criar página /mega-admin/tenant/:id com detalhe do cliente (cadastro, assinatura, usuários, sinistros)
+- [x] Criar página /mega-admin/audit com log de todas as ações administrativas
+- [x] Proteção de rota: redirecionar não-mega-admin que tentar acessar /mega-admin
+- [x] Confirmação de ações destrutivas (suspender tenant, excluir usuário)
+- [x] Criar usuário mega-admin no banco via SQL
+- [x] Adicionar link para /mega-admin no EonLayout apenas para mega-admin

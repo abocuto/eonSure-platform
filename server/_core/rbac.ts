@@ -50,13 +50,13 @@ export type Permission = keyof typeof PERMISSIONS;
 // ─── Guard Function ───────────────────────────────────────────────────────────
 /**
  * Throws TRPCError FORBIDDEN if the user does not have the required permission.
- * Admins bypass all persona checks.
+ * Admins and mega-admins bypass all persona checks.
  */
 export function requirePermission(
   user: Pick<User, "role" | "persona">,
   permission: Permission
 ): void {
-  if (user.role === "admin") return; // admins bypass all checks
+  if (user.role === "admin" || user.role === "mega-admin") return; // elevated roles bypass all checks
 
   const allowed = PERMISSIONS[permission] as readonly string[];
   const persona = user.persona ?? "perito";
@@ -65,6 +65,20 @@ export function requirePermission(
     throw new TRPCError({
       code: "FORBIDDEN",
       message: `A persona "${persona}" não tem permissão para executar a ação "${permission}".`,
+    });
+  }
+}
+
+/**
+ * Guard exclusivo para o ambiente Mega-Admin.
+ * Apenas usuários com role "mega-admin" podem acessar rotas administrativas globais.
+ * Boas práticas: separação estrita de camada — nem "admin" comum tem acesso.
+ */
+export function requireMegaAdmin(user: Pick<User, "role">): void {
+  if (user.role !== "mega-admin") {
+    throw new TRPCError({
+      code: "FORBIDDEN",
+      message: "Acesso restrito ao ambiente Mega-Admin. Credenciais insuficientes.",
     });
   }
 }

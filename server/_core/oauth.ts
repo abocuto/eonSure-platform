@@ -18,6 +18,17 @@ const DEMO_PERSONAS = [
   { openId: "demo-perito", name: "Mariana Silva (Perito)", email: "mariana@eonsure.ai", role: "user" as const, persona: "perito" as const },
 ];
 
+// Mega-admin credentials (demo access — not for production)
+const MEGA_ADMIN_OPENID = "mega-admin-root";
+const MEGA_ADMIN_SECRET = "EonSure@MegaAdmin2024!"; // checked against query param
+const MEGA_ADMIN_USER = {
+  openId: MEGA_ADMIN_OPENID,
+  name: "Super Admin EonSure",
+  email: "megaadmin@eonsure.ai",
+  role: "mega-admin" as const,
+  persona: "c-level" as const,
+};
+
 export function registerOAuthRoutes(app: Express) {
   // Demo login route — only available in development mode
   app.get("/api/demo-login", async (req: Request, res: Response) => {
@@ -53,6 +64,42 @@ export function registerOAuthRoutes(app: Express) {
     } catch (error) {
       console.error("[Demo Login] Failed", error);
       res.status(500).json({ error: "Demo login failed", details: String(error) });
+    }
+  });
+
+  // Mega-admin login — secret-key protected, available in all environments
+  // Best practice: uses a dedicated endpoint separated from demo/oauth flows
+  app.get("/api/mega-admin-login", async (req: Request, res: Response) => {
+    const secret = getQueryParam(req, "secret");
+    if (secret !== MEGA_ADMIN_SECRET) {
+      // Best practice: uniform error response — don't reveal if secret is wrong vs user not found
+      res.status(401).json({ error: "Credenciais inválidas." });
+      return;
+    }
+    try {
+      await db.upsertUser({
+        openId: MEGA_ADMIN_USER.openId,
+        name: MEGA_ADMIN_USER.name,
+        email: MEGA_ADMIN_USER.email,
+        loginMethod: "mega-admin",
+        persona: MEGA_ADMIN_USER.persona,
+        role: MEGA_ADMIN_USER.role,
+        lastSignedIn: new Date(),
+      });
+      const sessionToken = await sdk.createSessionToken(MEGA_ADMIN_USER.openId, {
+        name: MEGA_ADMIN_USER.name,
+        expiresInMs: ONE_YEAR_MS,
+      });
+      const cookieOptions = getSessionCookieOptions(req);
+      res.cookie(COOKIE_NAME, sessionToken, { ...cookieOptions, maxAge: ONE_YEAR_MS });
+      if (req.headers.accept?.includes("application/json")) {
+        res.json({ token: sessionToken, user: MEGA_ADMIN_USER });
+        return;
+      }
+      res.redirect(302, "/mega-admin");
+    } catch (error) {
+      console.error("[Mega-Admin Login] Failed", error);
+      res.status(500).json({ error: "Login falhou.", details: String(error) });
     }
   });
 

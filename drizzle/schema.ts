@@ -17,7 +17,7 @@ export const users = mysqlTable("users", {
   name: text("name"),
   email: varchar("email", { length: 320 }),
   loginMethod: varchar("loginMethod", { length: 64 }),
-  role: mysqlEnum("role", ["user", "admin"]).default("user").notNull(),
+  role: mysqlEnum("role", ["user", "admin", "mega-admin"]).default("user").notNull(),
   persona: mysqlEnum("persona", [
     "c-level",
     "gerente-sinistros",
@@ -277,3 +277,32 @@ export const subscriptions = mysqlTable("subscriptions", {
 
 export type Subscription = typeof subscriptions.$inferSelect;
 export type InsertSubscription = typeof subscriptions.$inferInsert;
+
+// ─── Audit Logs (Mega-Admin) ────────────────────────────────────────────────────────────────────────────────────────
+export const auditLogs = mysqlTable("audit_logs", {
+  id: int("id").autoincrement().primaryKey(),
+  // Who performed the action
+  adminId: int("adminId").notNull(),
+  adminName: varchar("adminName", { length: 256 }),
+  adminEmail: varchar("adminEmail", { length: 320 }),
+  // What action was performed
+  action: varchar("action", { length: 128 }).notNull(), // e.g. "tenant.suspend", "user.delete"
+  resource: varchar("resource", { length: 64 }).notNull(), // e.g. "tenant", "user", "subscription"
+  resourceId: int("resourceId"),
+  resourceName: varchar("resourceName", { length: 256 }),
+  // Context
+  targetTenantId: int("targetTenantId"),
+  targetTenantName: varchar("targetTenantName", { length: 256 }),
+  // Before/after state for reversibility
+  previousState: json("previousState"),
+  newState: json("newState"),
+  // Request metadata for security
+  ipAddress: varchar("ipAddress", { length: 64 }),
+  userAgent: text("userAgent"),
+  severity: mysqlEnum("severity", ["info", "warning", "critical"]).default("info").notNull(),
+  notes: text("notes"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type AuditLog = typeof auditLogs.$inferSelect;
+export type InsertAuditLog = typeof auditLogs.$inferInsert;
