@@ -44,9 +44,10 @@ const CAN_READ_ANALYTICS: Persona[] = ["c-level", "gerente-sinistros", "cio"];
 
 export default function Dashboard() {
   const { user, loading: authLoading } = useAuth();
-  const persona = (user?.persona ?? "perito") as Persona;
-  // Only evaluate permission AFTER auth has resolved to avoid firing queries before user is known
-  const canReadAnalytics = !authLoading && !!user && CAN_READ_ANALYTICS.includes(persona);
+  // Persona is only known after auth resolves — default to a non-privileged value
+  const persona = (!authLoading && user?.persona ? user.persona : null) as Persona | null;
+  // canReadAnalytics is only true once we know the user AND their persona is allowed
+  const canReadAnalytics = !!persona && CAN_READ_ANALYTICS.includes(persona);
   const userReady = !authLoading && !!user;
 
   const {
@@ -55,7 +56,10 @@ export default function Dashboard() {
     refetch,
   } = trpc.analytics.getKpis.useQuery(undefined, {
     refetchInterval: canReadAnalytics ? 30_000 : false,
+    // Only fire when we positively know the persona is allowed
     enabled: canReadAnalytics,
+    retry: false,
+    staleTime: 10_000,
   });
 
   const {
@@ -66,10 +70,15 @@ export default function Dashboard() {
     {
       refetchInterval: canReadAnalytics ? 30_000 : false,
       enabled: canReadAnalytics,
+      retry: false,
+      staleTime: 10_000,
     }
   );
 
-  const { data: claims, isLoading: claimsLoading } = trpc.claims.list.useQuery({ limit: 5 });
+  const { data: claims, isLoading: claimsLoading } = trpc.claims.list.useQuery(
+    { limit: 5 },
+    { enabled: userReady }
+  );
 
   // Status summary — available to all personas with claims:read (no analytics:read required)
   const { data: statusSummary, isLoading: statusLoading } = trpc.claims.getStatusSummary.useQuery(
@@ -108,7 +117,7 @@ export default function Dashboard() {
     <div className="space-y-6">
       <SectionHeader
         title={`Bem-vindo, ${user?.name?.split(" ")[0] ?? "Usuário"}`}
-        subtitle={`${PERSONA_LABELS[persona]} · Dashboard Executivo`}
+        subtitle={`${PERSONA_LABELS[persona ?? "perito"]} · Dashboard Executivo`}
         icon={LayoutDashboard}
         actions={
           <Button

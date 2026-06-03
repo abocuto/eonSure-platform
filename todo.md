@@ -127,3 +127,6 @@
 - [x] Página /mega-admin/users: filtros por tenant, role e persona
 - [x] Detalhe do tenant: aba CSAT/NPS com histórico de respostas e médias
 - [x] Navegação mega-admin: link para /mega-admin/users no header
+
+## Bugfixes
+- [x] Dashboard: race condition causava analytics.getKpis ser disparado para persona perito antes do auth resolver; corrigido com persona derivada somente pós-auth e retry:false
