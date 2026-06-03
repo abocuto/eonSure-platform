@@ -100,106 +100,171 @@ function ScoreBar({ value, max = 10, color }: { value: number | null; max?: numb
   );
 }
 
-// ─── Novo Tenant Modal ────────────────────────────────────────────────────────
+// ─── Novo Tenant Modal (2 etapas) ────────────────────────────────────────────
+const EMPTY_TENANT_FORM = {
+  name: "", slug: "", plan: "starter" as "starter" | "professional" | "enterprise",
+  supportEmail: "", supportPhone: "",
+};
+const EMPTY_USER_FORM = { name: "", email: "", persona: "c-level" as "c-level" | "cio" };
+
 function NewTenantModal({ open, onClose }: { open: boolean; onClose: () => void }) {
   const utils = trpc.useUtils();
-  const [form, setForm] = useState({
-    name: "",
-    slug: "",
-    plan: "starter" as "starter" | "professional" | "enterprise",
-    supportEmail: "",
-    supportPhone: "",
-  });
+  const [step, setStep] = useState<1 | 2>(1);
+  const [tenantForm, setTenantForm] = useState(EMPTY_TENANT_FORM);
+  const [userForm, setUserForm] = useState(EMPTY_USER_FORM);
+  const [skipUser, setSkipUser] = useState(false);
 
   const createTenant = trpc.megaAdmin.createTenant.useMutation({
     onSuccess: (data) => {
-      toast.success("Cliente criado com sucesso!");
+      toast.success(`Cliente criado!${data.firstUserId ? " Primeiro usuário cadastrado." : ""}`);
       utils.megaAdmin.getAllTenants.invalidate();
       utils.megaAdmin.getDashboardMetrics.invalidate();
-      onClose();
-      setForm({ name: "", slug: "", plan: "starter", supportEmail: "", supportPhone: "" });
+      utils.megaAdmin.getTenantLeaders.invalidate();
+      handleClose();
     },
     onError: (e) => toast.error(e.message),
   });
 
+  const handleClose = () => {
+    setStep(1); setTenantForm(EMPTY_TENANT_FORM); setUserForm(EMPTY_USER_FORM); setSkipUser(false); onClose();
+  };
   const autoSlug = (name: string) =>
     name.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+  const handleSubmit = () => createTenant.mutate({
+    ...tenantForm,
+    supportEmail: tenantForm.supportEmail || undefined,
+    supportPhone: tenantForm.supportPhone || undefined,
+    firstUser: skipUser ? undefined : { name: userForm.name, email: userForm.email, persona: userForm.persona },
+  });
+  const step1Valid = tenantForm.name.length >= 2 && tenantForm.slug.length >= 2;
+  const step2Valid = skipUser || (userForm.name.length >= 2 && userForm.email.includes("@"));
 
   return (
-    <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
-      <DialogContent className="bg-[#0d1526] border-white/10 text-white max-w-md">
+    <Dialog open={open} onOpenChange={(v) => !v && handleClose()}>
+      <DialogContent className="bg-[#0d1526] border-white/10 text-white max-w-lg">
         <DialogHeader>
-          <DialogTitle className="text-white flex items-center gap-2">
-            <Plus className="w-5 h-5 text-cyan-400" /> Novo Cliente
-          </DialogTitle>
-          <DialogDescription className="text-slate-400">
-            Crie um novo tenant na plataforma. Uma assinatura em modo trial será criada automaticamente.
+          <div className="flex items-center gap-3 mb-1">
+            <div className="flex items-center gap-1">
+              <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold ${
+                step === 1 ? "bg-cyan-500 text-white" : "bg-emerald-500/20 text-emerald-400"
+              }`}>{step === 1 ? "1" : "✓"}</div>
+              <div className="w-8 h-px bg-white/20" />
+              <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold ${
+                step === 2 ? "bg-cyan-500 text-white" : "bg-white/10 text-slate-500"
+              }`}>2</div>
+            </div>
+            <DialogTitle className="text-white text-base">
+              {step === 1 ? "Dados do Cliente" : "Primeiro Usuário"}
+            </DialogTitle>
+          </div>
+          <DialogDescription className="text-slate-400 text-sm">
+            {step === 1
+              ? "Configure o tenant e o plano de assinatura."
+              : "Adicione o usuário principal que vai gerenciar a conta."}
           </DialogDescription>
         </DialogHeader>
-        <div className="space-y-4 py-2">
-          <div className="space-y-1.5">
-            <Label className="text-slate-300 text-sm">Nome da empresa *</Label>
-            <Input
-              value={form.name}
-              onChange={(e) => setForm((f) => ({ ...f, name: e.target.value, slug: autoSlug(e.target.value) }))}
-              placeholder="Ex: Seguradora Exemplo S.A."
-              className="bg-white/5 border-white/10 text-white placeholder:text-slate-500"
-            />
-          </div>
-          <div className="space-y-1.5">
-            <Label className="text-slate-300 text-sm">Slug (URL) *</Label>
-            <Input
-              value={form.slug}
-              onChange={(e) => setForm((f) => ({ ...f, slug: e.target.value }))}
-              placeholder="seguradora-exemplo"
-              className="bg-white/5 border-white/10 text-white placeholder:text-slate-500 font-mono text-sm"
-            />
-            <p className="text-xs text-slate-500">Apenas letras minúsculas, números e hífens.</p>
-          </div>
-          <div className="space-y-1.5">
-            <Label className="text-slate-300 text-sm">Plano *</Label>
-            <Select value={form.plan} onValueChange={(v) => setForm((f) => ({ ...f, plan: v as typeof f.plan }))}>
-              <SelectTrigger className="bg-white/5 border-white/10 text-white">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent className="bg-[#0d1526] border-white/10">
-                <SelectItem value="starter" className="text-white">Starter — R$ 990/mês</SelectItem>
-                <SelectItem value="professional" className="text-white">Professional — R$ 2.490/mês</SelectItem>
-                <SelectItem value="enterprise" className="text-white">Enterprise — R$ 5.990/mês</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="grid grid-cols-2 gap-3">
+
+        {step === 1 && (
+          <div className="space-y-4 py-2">
             <div className="space-y-1.5">
-              <Label className="text-slate-300 text-sm">E-mail de suporte</Label>
+              <Label className="text-slate-300 text-sm">Nome da empresa *</Label>
               <Input
-                value={form.supportEmail}
-                onChange={(e) => setForm((f) => ({ ...f, supportEmail: e.target.value }))}
-                placeholder="suporte@empresa.com"
-                className="bg-white/5 border-white/10 text-white placeholder:text-slate-500 text-sm"
+                value={tenantForm.name}
+                onChange={(e) => setTenantForm((f) => ({ ...f, name: e.target.value, slug: autoSlug(e.target.value) }))}
+                placeholder="Ex: Seguradora Exemplo S.A."
+                className="bg-white/5 border-white/10 text-white placeholder:text-slate-500"
               />
             </div>
             <div className="space-y-1.5">
-              <Label className="text-slate-300 text-sm">Telefone</Label>
+              <Label className="text-slate-300 text-sm">Slug (URL) *</Label>
               <Input
-                value={form.supportPhone}
-                onChange={(e) => setForm((f) => ({ ...f, supportPhone: e.target.value }))}
-                placeholder="(11) 9 0000-0000"
-                className="bg-white/5 border-white/10 text-white placeholder:text-slate-500 text-sm"
+                value={tenantForm.slug}
+                onChange={(e) => setTenantForm((f) => ({ ...f, slug: e.target.value }))}
+                placeholder="seguradora-exemplo"
+                className="bg-white/5 border-white/10 text-white placeholder:text-slate-500 font-mono text-sm"
               />
+              <p className="text-xs text-slate-500">Apenas letras minúsculas, números e hífens.</p>
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-slate-300 text-sm">Plano *</Label>
+              <Select value={tenantForm.plan} onValueChange={(v) => setTenantForm((f) => ({ ...f, plan: v as typeof f.plan }))}>
+                <SelectTrigger className="bg-white/5 border-white/10 text-white"><SelectValue /></SelectTrigger>
+                <SelectContent className="bg-[#0d1526] border-white/10">
+                  <SelectItem value="starter" className="text-white">Starter — R$ 990/mês</SelectItem>
+                  <SelectItem value="professional" className="text-white">Professional — R$ 2.490/mês</SelectItem>
+                  <SelectItem value="enterprise" className="text-white">Enterprise — R$ 5.990/mês</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label className="text-slate-300 text-sm">E-mail de suporte</Label>
+                <Input value={tenantForm.supportEmail} onChange={(e) => setTenantForm((f) => ({ ...f, supportEmail: e.target.value }))} placeholder="suporte@empresa.com" className="bg-white/5 border-white/10 text-white placeholder:text-slate-500 text-sm" />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-slate-300 text-sm">Telefone</Label>
+                <Input value={tenantForm.supportPhone} onChange={(e) => setTenantForm((f) => ({ ...f, supportPhone: e.target.value }))} placeholder="(11) 9 0000-0000" className="bg-white/5 border-white/10 text-white placeholder:text-slate-500 text-sm" />
+              </div>
             </div>
           </div>
-        </div>
-        <DialogFooter className="gap-2">
-          <Button variant="ghost" onClick={onClose} className="text-slate-400 hover:text-white">Cancelar</Button>
-          <Button
-            onClick={() => createTenant.mutate({ ...form, supportEmail: form.supportEmail || undefined, supportPhone: form.supportPhone || undefined })}
-            disabled={!form.name || !form.slug || createTenant.isPending}
-            className="bg-cyan-500 hover:bg-cyan-600 text-white gap-2"
-          >
-            {createTenant.isPending ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
-            Criar Cliente
-          </Button>
+        )}
+
+        {step === 2 && (
+          <div className="space-y-4 py-2">
+            <div className="flex items-center gap-3 p-3 bg-cyan-500/10 border border-cyan-500/20 rounded-lg">
+              <UserCheck className="w-5 h-5 text-cyan-400 flex-shrink-0" />
+              <div className="text-sm">
+                <p className="text-cyan-300 font-medium">Primeiro usuário do tenant</p>
+                <p className="text-cyan-400/70 text-xs">O C-Level ou CIO poderá adicionar mais usuários após o acesso.</p>
+              </div>
+            </div>
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input type="checkbox" checked={skipUser} onChange={(e) => setSkipUser(e.target.checked)} className="w-4 h-4 rounded accent-cyan-500" />
+              <span className="text-slate-400 text-sm">Criar o usuário depois (pular esta etapa)</span>
+            </label>
+            {!skipUser && (
+              <>
+                <div className="space-y-1.5">
+                  <Label className="text-slate-300 text-sm">Nome completo *</Label>
+                  <Input value={userForm.name} onChange={(e) => setUserForm((f) => ({ ...f, name: e.target.value }))} placeholder="Ex: João Silva" className="bg-white/5 border-white/10 text-white placeholder:text-slate-500" />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-slate-300 text-sm">E-mail corporativo *</Label>
+                  <Input value={userForm.email} onChange={(e) => setUserForm((f) => ({ ...f, email: e.target.value }))} placeholder="joao@seguradora.com" className="bg-white/5 border-white/10 text-white placeholder:text-slate-500" type="email" />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-slate-300 text-sm">Nível de acesso *</Label>
+                  <Select value={userForm.persona} onValueChange={(v) => setUserForm((f) => ({ ...f, persona: v as typeof f.persona }))}>
+                    <SelectTrigger className="bg-white/5 border-white/10 text-white"><SelectValue /></SelectTrigger>
+                    <SelectContent className="bg-[#0d1526] border-white/10">
+                      <SelectItem value="c-level" className="text-white">C-Level — Acesso total + gestão</SelectItem>
+                      <SelectItem value="cio" className="text-white">CIO — Tecnologia + configurações</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-slate-500">O C-Level pode adicionar outros usuários após o primeiro acesso.</p>
+                </div>
+              </>
+            )}
+          </div>
+        )}
+
+        <DialogFooter className="gap-2 pt-2">
+          {step === 1 ? (
+            <>
+              <Button variant="ghost" onClick={handleClose} className="text-slate-400 hover:text-white">Cancelar</Button>
+              <Button onClick={() => setStep(2)} disabled={!step1Valid} className="bg-cyan-500 hover:bg-cyan-600 text-white gap-2">
+                Próximo <ChevronRight className="w-4 h-4" />
+              </Button>
+            </>
+          ) : (
+            <>
+              <Button variant="ghost" onClick={() => setStep(1)} className="text-slate-400 hover:text-white">Voltar</Button>
+              <Button onClick={handleSubmit} disabled={!step2Valid || createTenant.isPending} className="bg-cyan-500 hover:bg-cyan-600 text-white gap-2">
+                {createTenant.isPending ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
+                Criar Cliente
+              </Button>
+            </>
+          )}
         </DialogFooter>
       </DialogContent>
     </Dialog>

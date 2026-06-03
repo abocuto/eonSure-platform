@@ -26,6 +26,7 @@ export const users = mysqlTable("users", {
     "perito",
   ]).default("perito"),
   tenantId: int("tenantId"),
+  isActive: boolean("isActive").default(true).notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
   lastSignedIn: timestamp("lastSignedIn").defaultNow().notNull(),

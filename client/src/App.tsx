@@ -18,6 +18,7 @@ import Subscriptions from "./pages/Subscriptions";
 import Profile from "./pages/Profile";
 import WhiteLabel from "./pages/WhiteLabel";
 import MegaAdmin from "./pages/MegaAdmin";
+import TenantUsers from "./pages/TenantUsers";
 import MegaAdminTenant from "./pages/MegaAdminTenant";
 import MegaAdminAuditLog from "./pages/MegaAdminAuditLog";
 import MegaAdminUsers from "./pages/MegaAdminUsers";
@@ -110,6 +111,13 @@ function Router() {
         </ProtectedRoute>
       </Route>
 
+      <Route path="/users">
+        <ProtectedRoute path="/users">
+          <EonLayout>
+            <TenantUsers />
+          </EonLayout>
+        </ProtectedRoute>
+      </Route>
       <Route path="/profile" component={Profile} />
 
       {/* Mega-Admin routes - sem EonLayout, layout próprio */}

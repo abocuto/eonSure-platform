@@ -1,4 +1,4 @@
-import { eq, and, desc, count, avg, sql, gte, lte } from "drizzle-orm";
+import { eq, and, desc, count, avg, sql, gte, lte, isNotNull, inArray } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
 import {
   users, tenants, claims, claimEvents, rules, ruleLogs,
@@ -889,4 +889,190 @@ export async function createTenantByAdmin(data: {
   });
 
   return newTenantId;
+}
+
+// ─── Tenant User Management ───────────────────────────────────────────────────
+
+/** Lista todos os usuários de um tenant específico */
+export async function getUsersByTenant(tenantId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return db
+    .select({
+      id: users.id,
+      openId: users.openId,
+      name: users.name,
+      email: users.email,
+      role: users.role,
+      persona: users.persona,
+      loginMethod: users.loginMethod,
+      tenantId: users.tenantId,
+      isActive: users.isActive,
+      lastSignedIn: users.lastSignedIn,
+      createdAt: users.createdAt,
+    })
+    .from(users)
+    .where(eq(users.tenantId, tenantId))
+    .orderBy(users.persona, users.name);
+}
+
+/** Cria um novo usuário vinculado a um tenant */
+export async function createTenantUser(data: {
+  name: string;
+  email: string;
+  persona: "c-level" | "gerente-sinistros" | "analista-fraude" | "cio" | "perito";
+  tenantId: number;
+  role?: "user" | "admin";
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  // Gerar openId único baseado no email + timestamp
+  const openId = `user-${data.tenantId}-${data.email.split("@")[0].toLowerCase().replace(/[^a-z0-9]/g, "")}-${Date.now().toString(36)}`;
+  // Verificar se email já existe no tenant
+  const [existing] = await db
+    .select({ id: users.id })
+    .from(users)
+    .where(and(eq(users.email, data.email), eq(users.tenantId, data.tenantId)))
+    .limit(1);
+  if (existing) throw new Error(`E-mail '${data.email}' já está cadastrado neste tenant.`);
+  await db.insert(users).values({
+    openId,
+    name: data.name,
+    email: data.email,
+    persona: data.persona,
+    tenantId: data.tenantId,
+    role: data.role ?? "user",
+    loginMethod: "invite",
+    lastSignedIn: new Date(),
+  });
+  const [created] = await db.select().from(users).where(eq(users.openId, openId)).limit(1);
+  return created;
+}
+
+/** Atualiza persona/role de um usuário do tenant */
+export async function updateTenantUser(
+  userId: number,
+  tenantId: number,
+  data: Partial<{
+    name: string;
+    persona: "c-level" | "gerente-sinistros" | "analista-fraude" | "cio" | "perito";
+    role: "user" | "admin";
+    isActive: boolean;
+  }>
+) {
+  const db = await getDb();
+  if (!db) return;
+  await db
+    .update(users)
+    .set({ ...data, updatedAt: new Date() })
+    .where(and(eq(users.id, userId), eq(users.tenantId, tenantId)));
+}
+
+/** Remove um usuário do tenant (soft: tenantId = null) */
+export async function removeTenantUser(userId: number, tenantId: number) {
+  const db = await getDb();
+  if (!db) return;
+  await db
+    .update(users)
+    .set({ tenantId: null, updatedAt: new Date() })
+    .where(and(eq(users.id, userId), eq(users.tenantId, tenantId)));
+}
+
+/** Lista apenas C-Level e CIO de todos os tenants (visão mega-admin) */
+export async function getTenantLeaders() {
+  const db = await getDb();
+  if (!db) return [];
+  const leaders = await db
+    .select({
+      id: users.id,
+      openId: users.openId,
+      name: users.name,
+      email: users.email,
+      persona: users.persona,
+      role: users.role,
+      tenantId: users.tenantId,
+      lastSignedIn: users.lastSignedIn,
+      createdAt: users.createdAt,
+    })
+    .from(users)
+    .where(
+      and(
+        isNotNull(users.tenantId),
+        inArray(users.persona, ["c-level", "cio"])
+      )
+    )
+    .orderBy(users.tenantId, users.persona);
+  const allTenants = await db.select({ id: tenants.id, name: tenants.name, slug: tenants.slug }).from(tenants);
+  const tenantMap = new Map(allTenants.map((t) => [t.id, t]));
+  return leaders.map((u) => ({
+    ...u,
+    tenantName: u.tenantId ? (tenantMap.get(u.tenantId)?.name ?? null) : null,
+    tenantSlug: u.tenantId ? (tenantMap.get(u.tenantId)?.slug ?? null) : null,
+    loginUrl: u.openId?.startsWith("demo-")
+      ? `/api/demo-login?persona=${u.persona}`
+      : null,
+  }));
+}
+
+/** Cria tenant + primeiro usuário C-Level em uma transação */
+export async function createTenantWithFirstUser(data: {
+  tenant: {
+    name: string;
+    slug: string;
+    plan: "starter" | "professional" | "enterprise";
+    supportEmail?: string;
+    supportPhone?: string;
+  };
+  firstUser?: {
+    name: string;
+    email: string;
+    persona: "c-level" | "cio";
+  };
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  // 1. Verificar slug único
+  const [existingSlug] = await db.select({ id: tenants.id }).from(tenants).where(eq(tenants.slug, data.tenant.slug)).limit(1);
+  if (existingSlug) throw new Error(`Slug '${data.tenant.slug}' já está em uso.`);
+  // 2. Criar tenant
+  const [result] = await db.insert(tenants).values({
+    name: data.tenant.name,
+    slug: data.tenant.slug,
+    subscriptionPlan: data.tenant.plan,
+    supportEmail: data.tenant.supportEmail,
+    supportPhone: data.tenant.supportPhone,
+    isActive: true,
+  });
+  const newTenantId = (result as { insertId: number }).insertId;
+  // 3. Criar assinatura inicial
+  await db.insert(subscriptions).values({
+    tenantId: newTenantId,
+    plan: data.tenant.plan,
+    status: "trial",
+    billingCycle: "monthly",
+    maxClaims: data.tenant.plan === "enterprise" ? 10000 : data.tenant.plan === "professional" ? 1000 : 100,
+    maxUsers: data.tenant.plan === "enterprise" ? 100 : data.tenant.plan === "professional" ? 20 : 5,
+    pillarEonicData: data.tenant.plan !== "starter",
+    pillarRulesEngine: data.tenant.plan !== "starter",
+    pillarFraudML: data.tenant.plan === "enterprise",
+    pillarPredictive: data.tenant.plan === "enterprise",
+  });
+  // 4. Criar primeiro usuário se fornecido
+  let firstUserId: number | null = null;
+  if (data.firstUser) {
+    const openId = `user-${newTenantId}-${data.firstUser.email.split("@")[0].toLowerCase().replace(/[^a-z0-9]/g, "")}-${Date.now().toString(36)}`;
+    await db.insert(users).values({
+      openId,
+      name: data.firstUser.name,
+      email: data.firstUser.email,
+      persona: data.firstUser.persona,
+      tenantId: newTenantId,
+      role: data.firstUser.persona === "c-level" ? "admin" : "user",
+      loginMethod: "invite",
+      lastSignedIn: new Date(),
+    });
+    const [created] = await db.select({ id: users.id }).from(users).where(eq(users.openId, openId)).limit(1);
+    firstUserId = created?.id ?? null;
+  }
+  return { tenantId: newTenantId, firstUserId };
 }

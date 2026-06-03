@@ -9,7 +9,7 @@ import {
   LayoutDashboard, ClipboardList, ShieldAlert, GitBranch,
   BarChart3, MessageSquare, Settings, LogOut, Menu,
   TrendingUp, Server, Search, ChevronRight, Bell, Zap,
-  Sun, Moon, Palette,
+  Sun, Moon, Palette, Users,
 } from "lucide-react";
 import { PERSONA_LABELS } from "../../../shared/types";
 import type { Persona } from "../../../shared/types";
@@ -26,6 +26,7 @@ const NAV_ITEMS = [
   { href: "/csat", label: "CSAT", icon: MessageSquare, personas: ["c-level", "gerente-sinistros", "cio"] },
   { href: "/subscriptions", label: "Assinaturas", icon: Settings, personas: ["cio", "c-level"] },
   { href: "/whitelabel", label: "White-Label", icon: Palette, personas: ["cio", "c-level"] },
+  { href: "/users", label: "Usuários", icon: Users, personas: ["c-level", "cio"] },
 ];
 
 const PERSONA_ICON_MAP: Record<Persona, React.ComponentType<{ className?: string }>> = {
@@ -133,7 +134,11 @@ export default function EonLayout({ children }: EonLayoutProps) {
             <span className="text-lg font-bold text-sidebar-foreground">
               {tenant?.brandName ?? "EonSure"}
             </span>
-            <p className="text-xs text-muted-foreground leading-none">InsurTech Platform</p>
+            {tenant?.brandName ? (
+              <p className="text-xs text-muted-foreground leading-none">powered by EonSure</p>
+            ) : (
+              <p className="text-xs text-muted-foreground leading-none">InsurTech Platform</p>
+            )}
           </div>
         </div>
 

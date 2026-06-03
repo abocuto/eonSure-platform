@@ -8,6 +8,8 @@ import {
   createAuditLog, getAuditLogs, getPlatformMetrics,
   getPlatformDashboardMetrics, getAllPlatformUsers, getCsatDetailByTenant,
   createTenantByAdmin,
+  createTenantWithFirstUser,
+  getTenantLeaders,
 } from "../db";
 
 export const megaAdminRouter = router({
@@ -184,7 +186,7 @@ export const megaAdminRouter = router({
       return getCsatDetailByTenant(input.tenantId);
     }),
 
-  // ─── Criar novo tenant ─────────────────────────────────────────────────────
+  // ─── Criar novo tenant (com primeiro usuário opcional) ────────────────────
   createTenant: protectedProcedure
     .input(z.object({
       name: z.string().min(2),
@@ -192,26 +194,38 @@ export const megaAdminRouter = router({
       plan: z.enum(["starter", "professional", "enterprise"]),
       supportEmail: z.string().email().optional(),
       supportPhone: z.string().optional(),
+      firstUser: z.object({
+        name: z.string().min(2),
+        email: z.string().email(),
+        persona: z.enum(["c-level", "cio"]),
+      }).optional(),
     }))
     .mutation(async ({ ctx, input }) => {
       requireMegaAdmin(ctx.user);
       try {
-        const newId = await createTenantByAdmin(input);
+        const { firstUser, ...tenantData } = input;
+        const result = await createTenantWithFirstUser({ tenant: tenantData, firstUser });
         await createAuditLog({
           adminId: ctx.user.id,
           adminName: ctx.user.name ?? undefined,
           adminEmail: ctx.user.email ?? undefined,
           action: "tenant.create",
           resource: "tenant",
-          resourceId: newId ?? undefined,
+          resourceId: result.tenantId ?? undefined,
           resourceName: input.name,
-          newState: input as Record<string, unknown>,
+          newState: { ...tenantData, firstUserEmail: firstUser?.email } as Record<string, unknown>,
           severity: "info",
         });
-        return { success: true, tenantId: newId };
+        return { success: true, tenantId: result.tenantId, firstUserId: result.firstUserId };
       } catch (e: unknown) {
         const msg = e instanceof Error ? e.message : "Erro ao criar tenant";
         throw new TRPCError({ code: "BAD_REQUEST", message: msg });
       }
     }),
+
+  // ─── Líderes dos tenants (C-Level e CIO por cliente) ──────────────────────
+  getTenantLeaders: protectedProcedure.query(async ({ ctx }) => {
+    requireMegaAdmin(ctx.user);
+    return getTenantLeaders();
+  }),
 });
