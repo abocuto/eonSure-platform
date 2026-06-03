@@ -6,6 +6,8 @@ import {
   getAllTenantsWithStats, getTenantFullDetail, updateTenantByAdmin,
   updateSubscriptionByAdmin, updateUserByAdmin, removeUserFromTenant,
   createAuditLog, getAuditLogs, getPlatformMetrics,
+  getPlatformDashboardMetrics, getAllPlatformUsers, getCsatDetailByTenant,
+  createTenantByAdmin,
 } from "../db";
 
 export const megaAdminRouter = router({
@@ -153,5 +155,63 @@ export const megaAdminRouter = router({
     .query(async ({ ctx, input }) => {
       requireMegaAdmin(ctx.user);
       return getAuditLogs(input.limit, input.offset);
+    }),
+
+  // ─── Dashboard gerencial expandido ─────────────────────────────────────────
+  getDashboardMetrics: protectedProcedure.query(async ({ ctx }) => {
+    requireMegaAdmin(ctx.user);
+    return getPlatformDashboardMetrics();
+  }),
+
+  // ─── Todos os usuários da plataforma ──────────────────────────────────────
+  getAllUsers: protectedProcedure
+    .input(z.object({
+      tenantId: z.number().optional(),
+      role: z.string().optional(),
+      persona: z.string().optional(),
+      search: z.string().optional(),
+    }).optional())
+    .query(async ({ ctx, input }) => {
+      requireMegaAdmin(ctx.user);
+      return getAllPlatformUsers(input ?? undefined);
+    }),
+
+  // ─── CSAT/NPS detalhado por tenant ─────────────────────────────────────────
+  getTenantCsat: protectedProcedure
+    .input(z.object({ tenantId: z.number() }))
+    .query(async ({ ctx, input }) => {
+      requireMegaAdmin(ctx.user);
+      return getCsatDetailByTenant(input.tenantId);
+    }),
+
+  // ─── Criar novo tenant ─────────────────────────────────────────────────────
+  createTenant: protectedProcedure
+    .input(z.object({
+      name: z.string().min(2),
+      slug: z.string().min(2).regex(/^[a-z0-9-]+$/, "Slug deve conter apenas letras minúsculas, números e hífens"),
+      plan: z.enum(["starter", "professional", "enterprise"]),
+      supportEmail: z.string().email().optional(),
+      supportPhone: z.string().optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      requireMegaAdmin(ctx.user);
+      try {
+        const newId = await createTenantByAdmin(input);
+        await createAuditLog({
+          adminId: ctx.user.id,
+          adminName: ctx.user.name ?? undefined,
+          adminEmail: ctx.user.email ?? undefined,
+          action: "tenant.create",
+          resource: "tenant",
+          resourceId: newId ?? undefined,
+          resourceName: input.name,
+          newState: input as Record<string, unknown>,
+          severity: "info",
+        });
+        return { success: true, tenantId: newId };
+      } catch (e: unknown) {
+        const msg = e instanceof Error ? e.message : "Erro ao criar tenant";
+        throw new TRPCError({ code: "BAD_REQUEST", message: msg });
+      }
     }),
 });

@@ -678,3 +678,215 @@ export async function getPlatformMetrics() {
     openClaims: openClaims?.count ?? 0,
   };
 }
+
+// ─── Mega-Admin: Extended queries ─────────────────────────────────────────────
+
+/** Métricas financeiras estimadas (MRR/ARR) por plano */
+const PLAN_PRICES: Record<string, number> = {
+  starter: 990,
+  professional: 2490,
+  enterprise: 5990,
+};
+
+/** Métricas gerenciais expandidas da plataforma */
+export async function getPlatformDashboardMetrics() {
+  const db = await getDb();
+  if (!db) return null;
+
+  const [totalTenants] = await db.select({ count: count() }).from(tenants);
+  const [activeTenants] = await db.select({ count: count() }).from(tenants).where(eq(tenants.isActive, true));
+  const [totalUsers] = await db.select({ count: count() }).from(users);
+  const [totalClaims] = await db.select({ count: count() }).from(claims);
+  const [openClaims] = await db.select({ count: count() }).from(claims).where(
+    sql`${claims.status} NOT IN ('closed', 'rejected')`
+  );
+  const [resolvedClaims] = await db.select({ count: count() }).from(claims).where(eq(claims.status, "closed"));
+
+  // CSAT e NPS médios globais
+  const csatData = await db.select({ avgScore: avg(csatResponses.score), avgNps: avg(csatResponses.npsScore) }).from(csatResponses);
+  const avgCsat = csatData[0]?.avgScore ? parseFloat(String(csatData[0].avgScore)) : null;
+  const avgNps = csatData[0]?.avgNps ? parseFloat(String(csatData[0].avgNps)) : null;
+
+  // Distribuição de planos
+  const planDist = await db
+    .select({ plan: subscriptions.plan, count: count() })
+    .from(subscriptions)
+    .where(eq(subscriptions.status, "active"))
+    .groupBy(subscriptions.plan);
+
+  // MRR calculado
+  let mrr = 0;
+  for (const p of planDist) {
+    mrr += (PLAN_PRICES[p.plan ?? "starter"] ?? 0) * (p.count ?? 0);
+  }
+
+  // Distribuição de status de assinaturas
+  const subStatusDist = await db
+    .select({ status: subscriptions.status, count: count() })
+    .from(subscriptions)
+    .groupBy(subscriptions.status);
+
+  // Tenants com CSAT/NPS por tenant
+  const csatByTenant = await db
+    .select({
+      tenantId: csatResponses.tenantId,
+      avgScore: avg(csatResponses.score),
+      avgNps: avg(csatResponses.npsScore),
+      responseCount: count(),
+    })
+    .from(csatResponses)
+    .groupBy(csatResponses.tenantId);
+
+  return {
+    totalTenants: totalTenants?.count ?? 0,
+    activeTenants: activeTenants?.count ?? 0,
+    totalUsers: totalUsers?.count ?? 0,
+    totalClaims: totalClaims?.count ?? 0,
+    openClaims: openClaims?.count ?? 0,
+    resolvedClaims: resolvedClaims?.count ?? 0,
+    avgCsat,
+    avgNps,
+    mrr,
+    arr: mrr * 12,
+    planDistribution: planDist,
+    subStatusDistribution: subStatusDist,
+    csatByTenant,
+  };
+}
+
+/** Lista todos os usuários da plataforma com dados de tenant */
+export async function getAllPlatformUsers(filters?: {
+  tenantId?: number;
+  role?: string;
+  persona?: string;
+  search?: string;
+}) {
+  const db = await getDb();
+  if (!db) return [];
+
+  const allUsers = await db
+    .select({
+      id: users.id,
+      openId: users.openId,
+      name: users.name,
+      email: users.email,
+      role: users.role,
+      persona: users.persona,
+      loginMethod: users.loginMethod,
+      tenantId: users.tenantId,
+      lastSignedIn: users.lastSignedIn,
+      createdAt: users.createdAt,
+    })
+    .from(users)
+    .orderBy(desc(users.createdAt));
+
+  // Buscar nomes dos tenants
+  const allTenants = await db.select({ id: tenants.id, name: tenants.name, slug: tenants.slug }).from(tenants);
+  const tenantMap = new Map(allTenants.map((t) => [t.id, t]));
+
+  let result = allUsers.map((u) => ({
+    ...u,
+    tenantName: u.tenantId ? (tenantMap.get(u.tenantId)?.name ?? null) : null,
+    tenantSlug: u.tenantId ? (tenantMap.get(u.tenantId)?.slug ?? null) : null,
+    // Credencial de demo se o openId começa com "demo-" ou é "mega-admin-root"
+    demoLoginUrl: u.openId?.startsWith("demo-")
+      ? `/api/demo-login?persona=${u.persona}`
+      : u.openId === "mega-admin-root"
+      ? `/api/mega-admin-login?secret=EonSure@MegaAdmin2024!`
+      : null,
+  }));
+
+  // Filtros opcionais
+  if (filters?.tenantId) result = result.filter((u) => u.tenantId === filters.tenantId);
+  if (filters?.role) result = result.filter((u) => u.role === filters.role);
+  if (filters?.persona) result = result.filter((u) => u.persona === filters.persona);
+  if (filters?.search) {
+    const s = filters.search.toLowerCase();
+    result = result.filter(
+      (u) =>
+        (u.name ?? "").toLowerCase().includes(s) ||
+        (u.email ?? "").toLowerCase().includes(s) ||
+        (u.tenantName ?? "").toLowerCase().includes(s)
+    );
+  }
+
+  return result;
+}
+
+/** CSAT e NPS detalhados por tenant (mega-admin: com médias e breakdown por persona) */
+export async function getCsatDetailByTenant(tenantId: number) {
+  const db = await getDb();
+  if (!db) return { responses: [], avgScore: null, avgNps: null, byPersona: [] };
+
+  const responses = await db
+    .select()
+    .from(csatResponses)
+    .where(eq(csatResponses.tenantId, tenantId))
+    .orderBy(desc(csatResponses.createdAt))
+    .limit(50);
+
+  const [agg] = await db
+    .select({ avgScore: avg(csatResponses.score), avgNps: avg(csatResponses.npsScore) })
+    .from(csatResponses)
+    .where(eq(csatResponses.tenantId, tenantId));
+
+  const byPersona = await db
+    .select({
+      persona: csatResponses.persona,
+      avgScore: avg(csatResponses.score),
+      avgNps: avg(csatResponses.npsScore),
+      count: count(),
+    })
+    .from(csatResponses)
+    .where(eq(csatResponses.tenantId, tenantId))
+    .groupBy(csatResponses.persona);
+
+  return {
+    responses,
+    avgScore: agg?.avgScore ? parseFloat(String(agg.avgScore)) : null,
+    avgNps: agg?.avgNps ? parseFloat(String(agg.avgNps)) : null,
+    byPersona,
+  };
+}
+
+/** Cria um novo tenant (mega-admin) */
+export async function createTenantByAdmin(data: {
+  name: string;
+  slug: string;
+  plan: "starter" | "professional" | "enterprise";
+  supportEmail?: string;
+  supportPhone?: string;
+}) {
+  const db = await getDb();
+  if (!db) return null;
+
+  const [existing] = await db.select({ id: tenants.id }).from(tenants).where(eq(tenants.slug, data.slug)).limit(1);
+  if (existing) throw new Error(`Slug '${data.slug}' já está em uso.`);
+
+  const [result] = await db.insert(tenants).values({
+    name: data.name,
+    slug: data.slug,
+    subscriptionPlan: data.plan,
+    supportEmail: data.supportEmail,
+    supportPhone: data.supportPhone,
+    isActive: true,
+  });
+
+  const newTenantId = (result as { insertId: number }).insertId;
+
+  // Criar assinatura inicial
+  await db.insert(subscriptions).values({
+    tenantId: newTenantId,
+    plan: data.plan,
+    status: "trial",
+    billingCycle: "monthly",
+    maxClaims: data.plan === "enterprise" ? 10000 : data.plan === "professional" ? 1000 : 100,
+    maxUsers: data.plan === "enterprise" ? 100 : data.plan === "professional" ? 20 : 5,
+    pillarEonicData: data.plan !== "starter",
+    pillarRulesEngine: data.plan !== "starter",
+    pillarFraudML: data.plan === "enterprise",
+    pillarPredictive: data.plan === "enterprise",
+  });
+
+  return newTenantId;
+}

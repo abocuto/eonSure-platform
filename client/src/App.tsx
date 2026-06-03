@@ -20,6 +20,7 @@ import WhiteLabel from "./pages/WhiteLabel";
 import MegaAdmin from "./pages/MegaAdmin";
 import MegaAdminTenant from "./pages/MegaAdminTenant";
 import MegaAdminAuditLog from "./pages/MegaAdminAuditLog";
+import MegaAdminUsers from "./pages/MegaAdminUsers";
 import EonLayout from "./components/EonLayout";
 
 function Router() {
@@ -124,6 +125,12 @@ function Router() {
             <MegaAdminTenant />
           </ProtectedRoute>
         )}
+      </Route>
+
+      <Route path="/mega-admin/users">
+        <ProtectedRoute path="/mega-admin">
+          <MegaAdminUsers />
+        </ProtectedRoute>
       </Route>
 
       <Route path="/mega-admin/audit">

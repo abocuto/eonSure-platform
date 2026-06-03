@@ -5,21 +5,26 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription,
+} from "@/components/ui/dialog";
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from "@/components/ui/select";
 import {
   Building2, Users, FileText, ShieldCheck, Activity,
   Search, ChevronRight, AlertTriangle, CheckCircle2, XCircle, Clock,
-  Settings, LogOut, Eye, Lock,
+  LogOut, Eye, Lock, Plus, TrendingUp, DollarSign, Star, BarChart3,
+  UserCheck, Layers, RefreshCw,
 } from "lucide-react";
 import { Link, useLocation } from "wouter";
 import { useState } from "react";
 import { toast } from "sonner";
-import { trpc as trpcClient } from "@/lib/trpc";
 
-// ─── Guard: redirect non-mega-admin ──────────────────────────────────────────
+// ─── Guard ────────────────────────────────────────────────────────────────────
 function MegaAdminGuard({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
-  const [, navigate] = useLocation();
-
   if (loading) {
     return (
       <div className="min-h-screen bg-[#0a0f1e] flex items-center justify-center">
@@ -30,14 +35,13 @@ function MegaAdminGuard({ children }: { children: React.ReactNode }) {
       </div>
     );
   }
-
   if (!user || user.role !== "mega-admin") {
     return (
       <div className="min-h-screen bg-[#0a0f1e] flex items-center justify-center">
         <div className="text-center space-y-4 max-w-sm px-6">
           <Lock className="w-16 h-16 text-red-400 mx-auto" />
           <h1 className="text-2xl font-bold text-white">Acesso Restrito</h1>
-          <p className="text-slate-400 text-sm">Esta área é exclusiva para o Mega-Admin da plataforma EonSure.</p>
+          <p className="text-slate-400 text-sm">Esta área é exclusiva para o proprietário da plataforma EonSure.</p>
           <Link href="/dashboard">
             <Button className="bg-cyan-500 hover:bg-cyan-600 text-white w-full">Voltar ao Dashboard</Button>
           </Link>
@@ -45,18 +49,17 @@ function MegaAdminGuard({ children }: { children: React.ReactNode }) {
       </div>
     );
   }
-
   return <>{children}</>;
 }
 
-// ─── Status Badge ─────────────────────────────────────────────────────────────
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 function TenantStatusBadge({ isActive }: { isActive: boolean }) {
   return isActive ? (
-    <Badge className="bg-emerald-500/20 text-emerald-400 border-emerald-500/30 gap-1">
+    <Badge className="bg-emerald-500/20 text-emerald-400 border-emerald-500/30 gap-1 text-xs">
       <CheckCircle2 className="w-3 h-3" /> Ativo
     </Badge>
   ) : (
-    <Badge className="bg-red-500/20 text-red-400 border-red-500/30 gap-1">
+    <Badge className="bg-red-500/20 text-red-400 border-red-500/30 gap-1 text-xs">
       <XCircle className="w-3 h-3" /> Inativo
     </Badge>
   );
@@ -68,10 +71,138 @@ function PlanBadge({ plan }: { plan: string }) {
     professional: "bg-blue-500/20 text-blue-300 border-blue-500/30",
     enterprise: "bg-purple-500/20 text-purple-300 border-purple-500/30",
   };
+  const labels: Record<string, string> = {
+    starter: "Starter",
+    professional: "Professional",
+    enterprise: "Enterprise",
+  };
   return (
-    <Badge className={styles[plan] ?? styles.starter}>
-      {plan.charAt(0).toUpperCase() + plan.slice(1)}
+    <Badge className={`${styles[plan] ?? styles.starter} text-xs`}>
+      {labels[plan] ?? plan}
     </Badge>
+  );
+}
+
+function formatCurrency(value: number) {
+  return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 }).format(value);
+}
+
+function ScoreBar({ value, max = 10, color }: { value: number | null; max?: number; color: string }) {
+  if (value === null) return <span className="text-slate-500 text-xs">—</span>;
+  const pct = Math.round((value / max) * 100);
+  return (
+    <div className="flex items-center gap-2">
+      <div className="flex-1 h-1.5 bg-white/10 rounded-full overflow-hidden">
+        <div className={`h-full rounded-full ${color}`} style={{ width: `${pct}%` }} />
+      </div>
+      <span className="text-xs font-medium text-white w-6 text-right">{value.toFixed(1)}</span>
+    </div>
+  );
+}
+
+// ─── Novo Tenant Modal ────────────────────────────────────────────────────────
+function NewTenantModal({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const utils = trpc.useUtils();
+  const [form, setForm] = useState({
+    name: "",
+    slug: "",
+    plan: "starter" as "starter" | "professional" | "enterprise",
+    supportEmail: "",
+    supportPhone: "",
+  });
+
+  const createTenant = trpc.megaAdmin.createTenant.useMutation({
+    onSuccess: (data) => {
+      toast.success("Cliente criado com sucesso!");
+      utils.megaAdmin.getAllTenants.invalidate();
+      utils.megaAdmin.getDashboardMetrics.invalidate();
+      onClose();
+      setForm({ name: "", slug: "", plan: "starter", supportEmail: "", supportPhone: "" });
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
+  const autoSlug = (name: string) =>
+    name.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+
+  return (
+    <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
+      <DialogContent className="bg-[#0d1526] border-white/10 text-white max-w-md">
+        <DialogHeader>
+          <DialogTitle className="text-white flex items-center gap-2">
+            <Plus className="w-5 h-5 text-cyan-400" /> Novo Cliente
+          </DialogTitle>
+          <DialogDescription className="text-slate-400">
+            Crie um novo tenant na plataforma. Uma assinatura em modo trial será criada automaticamente.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-4 py-2">
+          <div className="space-y-1.5">
+            <Label className="text-slate-300 text-sm">Nome da empresa *</Label>
+            <Input
+              value={form.name}
+              onChange={(e) => setForm((f) => ({ ...f, name: e.target.value, slug: autoSlug(e.target.value) }))}
+              placeholder="Ex: Seguradora Exemplo S.A."
+              className="bg-white/5 border-white/10 text-white placeholder:text-slate-500"
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label className="text-slate-300 text-sm">Slug (URL) *</Label>
+            <Input
+              value={form.slug}
+              onChange={(e) => setForm((f) => ({ ...f, slug: e.target.value }))}
+              placeholder="seguradora-exemplo"
+              className="bg-white/5 border-white/10 text-white placeholder:text-slate-500 font-mono text-sm"
+            />
+            <p className="text-xs text-slate-500">Apenas letras minúsculas, números e hífens.</p>
+          </div>
+          <div className="space-y-1.5">
+            <Label className="text-slate-300 text-sm">Plano *</Label>
+            <Select value={form.plan} onValueChange={(v) => setForm((f) => ({ ...f, plan: v as typeof f.plan }))}>
+              <SelectTrigger className="bg-white/5 border-white/10 text-white">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent className="bg-[#0d1526] border-white/10">
+                <SelectItem value="starter" className="text-white">Starter — R$ 990/mês</SelectItem>
+                <SelectItem value="professional" className="text-white">Professional — R$ 2.490/mês</SelectItem>
+                <SelectItem value="enterprise" className="text-white">Enterprise — R$ 5.990/mês</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <Label className="text-slate-300 text-sm">E-mail de suporte</Label>
+              <Input
+                value={form.supportEmail}
+                onChange={(e) => setForm((f) => ({ ...f, supportEmail: e.target.value }))}
+                placeholder="suporte@empresa.com"
+                className="bg-white/5 border-white/10 text-white placeholder:text-slate-500 text-sm"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-slate-300 text-sm">Telefone</Label>
+              <Input
+                value={form.supportPhone}
+                onChange={(e) => setForm((f) => ({ ...f, supportPhone: e.target.value }))}
+                placeholder="(11) 9 0000-0000"
+                className="bg-white/5 border-white/10 text-white placeholder:text-slate-500 text-sm"
+              />
+            </div>
+          </div>
+        </div>
+        <DialogFooter className="gap-2">
+          <Button variant="ghost" onClick={onClose} className="text-slate-400 hover:text-white">Cancelar</Button>
+          <Button
+            onClick={() => createTenant.mutate({ ...form, supportEmail: form.supportEmail || undefined, supportPhone: form.supportPhone || undefined })}
+            disabled={!form.name || !form.slug || createTenant.isPending}
+            className="bg-cyan-500 hover:bg-cyan-600 text-white gap-2"
+          >
+            {createTenant.isPending ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
+            Criar Cliente
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -79,13 +210,26 @@ function PlanBadge({ plan }: { plan: string }) {
 export default function MegaAdmin() {
   const { user, logout } = useAuth();
   const [search, setSearch] = useState("");
+  const [showNewTenant, setShowNewTenant] = useState(false);
 
-  const { data: metrics, isLoading: metricsLoading } = trpc.megaAdmin.getPlatformMetrics.useQuery();
+  const { data: metrics, isLoading: metricsLoading } = trpc.megaAdmin.getDashboardMetrics.useQuery();
   const { data: tenants, isLoading: tenantsLoading } = trpc.megaAdmin.getAllTenants.useQuery();
 
   const filtered = (tenants ?? []).filter((t) =>
     t.name.toLowerCase().includes(search.toLowerCase()) ||
     t.slug.toLowerCase().includes(search.toLowerCase())
+  );
+
+  // Enrich tenants with CSAT data from metrics
+  const csatMap = new Map(
+    (metrics?.csatByTenant ?? []).map((c) => [
+      c.tenantId,
+      {
+        avgScore: c.avgScore ? parseFloat(String(c.avgScore)) : null,
+        avgNps: c.avgNps ? parseFloat(String(c.avgNps)) : null,
+        count: c.responseCount,
+      },
+    ])
   );
 
   return (
@@ -103,26 +247,38 @@ export default function MegaAdmin() {
                 <span className="ml-2 text-xs bg-red-500/20 text-red-300 border border-red-500/30 rounded px-1.5 py-0.5">MEGA-ADMIN</span>
               </div>
             </div>
-            <div className="flex items-center gap-3">
-              <Link href="/mega-admin/audit-log">
-                <Button variant="ghost" size="sm" className="text-slate-400 hover:text-white gap-2">
-                  <Activity className="w-4 h-4" /> Audit Log
+            <nav className="hidden md:flex items-center gap-1">
+              <Link href="/mega-admin">
+                <Button variant="ghost" size="sm" className="text-cyan-400 hover:text-cyan-300 gap-1.5 text-xs">
+                  <BarChart3 className="w-3.5 h-3.5" /> Dashboard
                 </Button>
               </Link>
+              <Link href="/mega-admin/users">
+                <Button variant="ghost" size="sm" className="text-slate-400 hover:text-white gap-1.5 text-xs">
+                  <Users className="w-3.5 h-3.5" /> Usuários
+                </Button>
+              </Link>
+              <Link href="/mega-admin/audit">
+                <Button variant="ghost" size="sm" className="text-slate-400 hover:text-white gap-1.5 text-xs">
+                  <Activity className="w-3.5 h-3.5" /> Audit Log
+                </Button>
+              </Link>
+            </nav>
+            <div className="flex items-center gap-3">
               <Link href="/dashboard">
-                <Button variant="ghost" size="sm" className="text-slate-400 hover:text-white gap-2">
-                  <Eye className="w-4 h-4" /> Ver Plataforma
+                <Button variant="ghost" size="sm" className="text-slate-400 hover:text-white gap-2 text-xs">
+                  <Eye className="w-3.5 h-3.5" /> Ver Plataforma
                 </Button>
               </Link>
               <div className="w-px h-6 bg-white/10" />
-              <span className="text-sm text-slate-400">{user?.name}</span>
+              <span className="text-sm text-slate-400 hidden sm:block">{user?.name}</span>
               <Button
                 variant="ghost"
                 size="sm"
                 className="text-red-400 hover:text-red-300 hover:bg-red-500/10 gap-2"
                 onClick={() => logout()}
               >
-                <LogOut className="w-4 h-4" /> Sair
+                <LogOut className="w-4 h-4" />
               </Button>
             </div>
           </div>
@@ -130,55 +286,245 @@ export default function MegaAdmin() {
 
         <main className="max-w-7xl mx-auto px-6 py-8 space-y-8">
           {/* ─── Page Title ──────────────────────────────────────────────── */}
+          <div className="flex items-start justify-between flex-wrap gap-4">
+            <div>
+              <h1 className="text-2xl font-bold text-white">Painel do Proprietário</h1>
+              <p className="text-slate-400 text-sm mt-1">
+                Visão gerencial completa da plataforma EonSure — clientes, receita, satisfação e operações.
+              </p>
+            </div>
+            <Button
+              onClick={() => setShowNewTenant(true)}
+              className="bg-cyan-500 hover:bg-cyan-600 text-white gap-2"
+            >
+              <Plus className="w-4 h-4" /> Novo Cliente
+            </Button>
+          </div>
+
+          {/* ─── KPI Row 1: Financeiro ───────────────────────────────────── */}
           <div>
-            <h1 className="text-2xl font-bold text-white">Painel de Administração Global</h1>
-            <p className="text-slate-400 text-sm mt-1">
-              Gerencie todos os clientes, assinaturas e usuários da plataforma EonSure.
-            </p>
+            <h2 className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">Receita</h2>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              {[
+                {
+                  label: "MRR Estimado",
+                  value: metricsLoading ? null : formatCurrency(metrics?.mrr ?? 0),
+                  icon: DollarSign,
+                  color: "text-emerald-400",
+                  sub: "Receita mensal recorrente",
+                },
+                {
+                  label: "ARR Estimado",
+                  value: metricsLoading ? null : formatCurrency(metrics?.arr ?? 0),
+                  icon: TrendingUp,
+                  color: "text-cyan-400",
+                  sub: "Projeção anual",
+                },
+                {
+                  label: "Clientes Ativos",
+                  value: metricsLoading ? null : String(metrics?.activeTenants ?? 0),
+                  icon: Building2,
+                  color: "text-blue-400",
+                  sub: `de ${metrics?.totalTenants ?? 0} cadastrados`,
+                },
+                {
+                  label: "Usuários Totais",
+                  value: metricsLoading ? null : String(metrics?.totalUsers ?? 0),
+                  icon: Users,
+                  color: "text-purple-400",
+                  sub: "em todos os tenants",
+                },
+              ].map((m) => (
+                <Card key={m.label} className="bg-[#0d1526] border-white/10">
+                  <CardContent className="p-4">
+                    <div className="flex items-center justify-between mb-3">
+                      <span className="text-xs text-slate-400">{m.label}</span>
+                      <m.icon className={`w-4 h-4 ${m.color} opacity-70`} />
+                    </div>
+                    {metricsLoading ? (
+                      <Skeleton className="h-7 w-24 bg-white/10" />
+                    ) : (
+                      <p className={`text-xl font-bold ${m.color}`}>{m.value}</p>
+                    )}
+                    <p className="text-xs text-slate-500 mt-1">{m.sub}</p>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
           </div>
 
-          {/* ─── Platform Metrics ────────────────────────────────────────── */}
-          <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-            {[
-              { label: "Tenants Total", value: metrics?.totalTenants, icon: Building2, color: "text-cyan-400" },
-              { label: "Tenants Ativos", value: metrics?.activeTenants, icon: CheckCircle2, color: "text-emerald-400" },
-              { label: "Usuários Total", value: metrics?.totalUsers, icon: Users, color: "text-blue-400" },
-              { label: "Sinistros Total", value: metrics?.totalClaims, icon: FileText, color: "text-purple-400" },
-              { label: "Sinistros Abertos", value: metrics?.openClaims, icon: Clock, color: "text-amber-400" },
-            ].map((m) => (
-              <Card key={m.label} className="bg-[#0d1526] border-white/10">
-                <CardContent className="p-4">
-                  <div className="flex items-center gap-2 mb-2">
-                    <m.icon className={`w-4 h-4 ${m.color}`} />
-                    <span className="text-xs text-slate-400">{m.label}</span>
-                  </div>
-                  {metricsLoading ? (
-                    <Skeleton className="h-7 w-16 bg-white/10" />
-                  ) : (
-                    <p className={`text-2xl font-bold ${m.color}`}>{m.value ?? 0}</p>
-                  )}
-                </CardContent>
-              </Card>
-            ))}
+          {/* ─── KPI Row 2: Satisfação e Operações ──────────────────────── */}
+          <div>
+            <h2 className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">Satisfação & Operações</h2>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              {[
+                {
+                  label: "CSAT Médio",
+                  value: metricsLoading ? null : metrics?.avgCsat ? `${metrics.avgCsat.toFixed(1)}/10` : "—",
+                  icon: Star,
+                  color: "text-amber-400",
+                  sub: "Satisfação do cliente",
+                },
+                {
+                  label: "NPS Médio",
+                  value: metricsLoading ? null : metrics?.avgNps ? `${metrics.avgNps.toFixed(1)}/10` : "—",
+                  icon: UserCheck,
+                  color: "text-cyan-400",
+                  sub: "Net Promoter Score",
+                },
+                {
+                  label: "Sinistros Totais",
+                  value: metricsLoading ? null : String(metrics?.totalClaims ?? 0),
+                  icon: FileText,
+                  color: "text-blue-400",
+                  sub: `${metrics?.openClaims ?? 0} em aberto`,
+                },
+                {
+                  label: "Sinistros Resolvidos",
+                  value: metricsLoading ? null : String(metrics?.resolvedClaims ?? 0),
+                  icon: CheckCircle2,
+                  color: "text-emerald-400",
+                  sub: "Status: encerrado",
+                },
+              ].map((m) => (
+                <Card key={m.label} className="bg-[#0d1526] border-white/10">
+                  <CardContent className="p-4">
+                    <div className="flex items-center justify-between mb-3">
+                      <span className="text-xs text-slate-400">{m.label}</span>
+                      <m.icon className={`w-4 h-4 ${m.color} opacity-70`} />
+                    </div>
+                    {metricsLoading ? (
+                      <Skeleton className="h-7 w-20 bg-white/10" />
+                    ) : (
+                      <p className={`text-xl font-bold ${m.color}`}>{m.value}</p>
+                    )}
+                    <p className="text-xs text-slate-500 mt-1">{m.sub}</p>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
           </div>
 
-          {/* ─── Tenants Table ───────────────────────────────────────────── */}
+          {/* ─── Distribuição de Planos ──────────────────────────────────── */}
+          <div className="grid md:grid-cols-2 gap-6">
+            <Card className="bg-[#0d1526] border-white/10">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-white text-sm flex items-center gap-2">
+                  <Layers className="w-4 h-4 text-purple-400" /> Distribuição de Planos
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                {metricsLoading ? (
+                  <div className="space-y-2">{[1, 2, 3].map((i) => <Skeleton key={i} className="h-8 bg-white/5" />)}</div>
+                ) : (
+                  ["starter", "professional", "enterprise"].map((plan) => {
+                    const entry = metrics?.planDistribution?.find((p) => p.plan === plan);
+                    const cnt = entry?.count ?? 0;
+                    const total = metrics?.activeTenants ?? 1;
+                    const pct = total > 0 ? Math.round((cnt / total) * 100) : 0;
+                    const colors: Record<string, string> = {
+                      starter: "bg-slate-400",
+                      professional: "bg-blue-400",
+                      enterprise: "bg-purple-400",
+                    };
+                    const labels: Record<string, string> = {
+                      starter: "Starter",
+                      professional: "Professional",
+                      enterprise: "Enterprise",
+                    };
+                    return (
+                      <div key={plan} className="space-y-1">
+                        <div className="flex justify-between text-xs">
+                          <span className="text-slate-300">{labels[plan]}</span>
+                          <span className="text-slate-400">{cnt} cliente{cnt !== 1 ? "s" : ""} · {pct}%</span>
+                        </div>
+                        <div className="h-2 bg-white/10 rounded-full overflow-hidden">
+                          <div className={`h-full rounded-full ${colors[plan]}`} style={{ width: `${pct}%`, transition: "width 0.6s ease" }} />
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </CardContent>
+            </Card>
+
+            <Card className="bg-[#0d1526] border-white/10">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-white text-sm flex items-center gap-2">
+                  <Activity className="w-4 h-4 text-cyan-400" /> Status das Assinaturas
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                {metricsLoading ? (
+                  <div className="space-y-2">{[1, 2, 3, 4].map((i) => <Skeleton key={i} className="h-8 bg-white/5" />)}</div>
+                ) : (
+                  (["active", "trial", "suspended", "cancelled"] as const).map((status) => {
+                    const entry = metrics?.subStatusDistribution?.find((s) => s.status === status);
+                    const cnt = entry?.count ?? 0;
+                    const total = (metrics?.subStatusDistribution ?? []).reduce((a, b) => a + (b.count ?? 0), 0) || 1;
+                    const pct = Math.round((cnt / total) * 100);
+                    const config: Record<string, { color: string; label: string; bar: string }> = {
+                      active: { color: "text-emerald-400", label: "Ativo", bar: "bg-emerald-400" },
+                      trial: { color: "text-amber-400", label: "Trial", bar: "bg-amber-400" },
+                      suspended: { color: "text-red-400", label: "Suspenso", bar: "bg-red-400" },
+                      cancelled: { color: "text-slate-500", label: "Cancelado", bar: "bg-slate-500" },
+                    };
+                    return (
+                      <div key={status} className="space-y-1">
+                        <div className="flex justify-between text-xs">
+                          <span className={config[status].color}>{config[status].label}</span>
+                          <span className="text-slate-400">{cnt} · {pct}%</span>
+                        </div>
+                        <div className="h-2 bg-white/10 rounded-full overflow-hidden">
+                          <div className={`h-full rounded-full ${config[status].bar}`} style={{ width: `${pct}%`, transition: "width 0.6s ease" }} />
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* ─── Tabela de Clientes ──────────────────────────────────────── */}
           <Card className="bg-[#0d1526] border-white/10">
             <CardHeader className="pb-4">
               <div className="flex items-center justify-between gap-4 flex-wrap">
-                <CardTitle className="text-white text-base">Clientes ({filtered.length})</CardTitle>
-                <div className="relative w-64">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                  <Input
-                    placeholder="Buscar cliente..."
-                    value={search}
-                    onChange={(e) => setSearch(e.target.value)}
-                    className="pl-9 bg-white/5 border-white/10 text-white placeholder:text-slate-500 text-sm"
-                  />
+                <CardTitle className="text-white text-base flex items-center gap-2">
+                  <Building2 className="w-4 h-4 text-cyan-400" />
+                  Clientes ({filtered.length})
+                </CardTitle>
+                <div className="flex items-center gap-3">
+                  <div className="relative w-56">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                    <Input
+                      placeholder="Buscar cliente..."
+                      value={search}
+                      onChange={(e) => setSearch(e.target.value)}
+                      className="pl-9 bg-white/5 border-white/10 text-white placeholder:text-slate-500 text-sm h-9"
+                    />
+                  </div>
+                  <Button
+                    size="sm"
+                    onClick={() => setShowNewTenant(true)}
+                    className="bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 border border-cyan-500/30 gap-1.5 h-9"
+                  >
+                    <Plus className="w-3.5 h-3.5" /> Novo
+                  </Button>
                 </div>
               </div>
             </CardHeader>
             <CardContent className="p-0">
+              {/* Header row */}
+              <div className="hidden md:grid grid-cols-[2fr_1fr_1fr_1fr_1fr_1fr_40px] gap-4 px-6 py-2 border-b border-white/5 text-xs text-slate-500 uppercase tracking-wider">
+                <span>Cliente</span>
+                <span>Plano</span>
+                <span>Usuários</span>
+                <span>Sinistros</span>
+                <span>CSAT</span>
+                <span>NPS</span>
+                <span />
+              </div>
               {tenantsLoading ? (
                 <div className="p-6 space-y-3">
                   {Array.from({ length: 4 }).map((_, i) => (
@@ -192,64 +538,68 @@ export default function MegaAdmin() {
                 </div>
               ) : (
                 <div className="divide-y divide-white/5">
-                  {filtered.map((tenant) => (
-                    <Link key={tenant.id} href={`/mega-admin/tenants/${tenant.id}`}>
-                      <div className="flex items-center gap-4 px-6 py-4 hover:bg-white/5 transition-colors cursor-pointer group">
-                        {/* Avatar */}
-                        <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-cyan-500/20 to-blue-600/20 border border-white/10 flex items-center justify-center flex-shrink-0">
-                          <span className="text-sm font-bold text-cyan-400">
-                            {tenant.name.charAt(0).toUpperCase()}
-                          </span>
-                        </div>
-                        {/* Info */}
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <span className="font-medium text-white text-sm truncate">{tenant.name}</span>
-                            <TenantStatusBadge isActive={tenant.isActive} />
+                  {filtered.map((tenant) => {
+                    const csat = csatMap.get(tenant.id);
+                    return (
+                      <Link key={tenant.id} href={`/mega-admin/tenant/${tenant.id}`}>
+                        <div className="grid grid-cols-[2fr_1fr] md:grid-cols-[2fr_1fr_1fr_1fr_1fr_1fr_40px] gap-4 items-center px-6 py-4 hover:bg-white/5 transition-colors cursor-pointer group">
+                          {/* Name */}
+                          <div className="flex items-center gap-3 min-w-0">
+                            <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-cyan-500/20 to-blue-600/20 border border-white/10 flex items-center justify-center flex-shrink-0">
+                              <span className="text-sm font-bold text-cyan-400">{tenant.name.charAt(0).toUpperCase()}</span>
+                            </div>
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <span className="font-medium text-white text-sm truncate">{tenant.name}</span>
+                                <TenantStatusBadge isActive={tenant.isActive} />
+                              </div>
+                              <p className="text-xs text-slate-500 font-mono">{tenant.slug}</p>
+                            </div>
+                          </div>
+                          {/* Plan */}
+                          <div className="hidden md:block">
                             <PlanBadge plan={tenant.subscriptionPlan ?? "starter"} />
                           </div>
-                          <p className="text-xs text-slate-500 mt-0.5">{tenant.slug}</p>
-                        </div>
-                        {/* Stats */}
-                        <div className="hidden md:flex items-center gap-6 text-xs text-slate-400">
-                          <div className="text-center">
-                            <p className="font-semibold text-white">{tenant.userCount}</p>
-                            <p>usuários</p>
+                          {/* Users */}
+                          <div className="hidden md:block text-sm text-white font-medium">{tenant.userCount}</div>
+                          {/* Claims */}
+                          <div className="hidden md:block text-sm text-white font-medium">{tenant.claimCount}</div>
+                          {/* CSAT */}
+                          <div className="hidden md:block w-24">
+                            <ScoreBar value={csat?.avgScore ?? null} color="bg-amber-400" />
                           </div>
-                          <div className="text-center">
-                            <p className="font-semibold text-white">{tenant.claimCount}</p>
-                            <p>sinistros</p>
+                          {/* NPS */}
+                          <div className="hidden md:block w-24">
+                            <ScoreBar value={csat?.avgNps ?? null} color="bg-cyan-400" />
                           </div>
-                          <div className="text-center">
-                            <p className="font-semibold text-white text-xs">
-                              {new Date(tenant.createdAt).toLocaleDateString("pt-BR")}
-                            </p>
-                            <p>criado em</p>
+                          {/* Arrow */}
+                          <div className="flex justify-end">
+                            <ChevronRight className="w-4 h-4 text-slate-600 group-hover:text-cyan-400 transition-colors" />
                           </div>
                         </div>
-                        <ChevronRight className="w-4 h-4 text-slate-600 group-hover:text-cyan-400 transition-colors flex-shrink-0" />
-                      </div>
-                    </Link>
-                  ))}
+                      </Link>
+                    );
+                  })}
                 </div>
               )}
             </CardContent>
           </Card>
 
-          {/* ─── Best Practices Notice ───────────────────────────────────── */}
+          {/* ─── Aviso de boas práticas ──────────────────────────────────── */}
           <div className="bg-amber-500/10 border border-amber-500/20 rounded-lg p-4 flex gap-3">
             <AlertTriangle className="w-5 h-5 text-amber-400 flex-shrink-0 mt-0.5" />
             <div className="text-sm">
               <p className="font-medium text-amber-300">Boas Práticas de Administração</p>
               <p className="text-amber-400/70 mt-1">
                 Todas as ações realizadas neste painel são registradas no Audit Log com IP, horário e estado anterior/posterior.
-                Ações destrutivas (suspensão, remoção de usuário) exigem confirmação explícita.
-                Nunca compartilhe as credenciais mega-admin. Utilize o princípio do menor privilégio ao promover usuários.
+                Ações destrutivas exigem confirmação explícita. Nunca compartilhe as credenciais mega-admin.
               </p>
             </div>
           </div>
         </main>
       </div>
+
+      <NewTenantModal open={showNewTenant} onClose={() => setShowNewTenant(false)} />
     </MegaAdminGuard>
   );
 }

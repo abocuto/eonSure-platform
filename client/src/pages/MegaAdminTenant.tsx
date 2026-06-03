@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription,
 } from "@/components/ui/dialog";
@@ -16,10 +17,212 @@ import {
 import {
   ArrowLeft, Building2, Users, FileText, Settings, ShieldCheck,
   AlertTriangle, CheckCircle2, XCircle, Edit2, Save, UserX, Lock, Unlock,
+  Star, BarChart3, Activity, LogOut, Eye,
 } from "lucide-react";
 import { Link, useParams } from "wouter";
 import { useState } from "react";
 import { toast } from "sonner";
+
+const PERSONA_LABELS: Record<string, string> = {
+  "c-level": "C-Level",
+  "gerente-sinistros": "Gerente de Sinistros",
+  "analista-fraude": "Analista de Fraude",
+  "cio": "CIO",
+  "perito": "Perito",
+};
+
+const PERSONA_COLORS: Record<string, string> = {
+  "c-level": "bg-purple-500/20 text-purple-300 border-purple-500/30",
+  "gerente-sinistros": "bg-blue-500/20 text-blue-300 border-blue-500/30",
+  "analista-fraude": "bg-red-500/20 text-red-300 border-red-500/30",
+  "cio": "bg-cyan-500/20 text-cyan-300 border-cyan-500/30",
+  "perito": "bg-amber-500/20 text-amber-300 border-amber-500/30",
+};
+
+// ─── TenantDetailTabs ────────────────────────────────────────────────────────
+type TenantUser = { id: number; name: string | null; email: string | null; role: string | null; persona: string | null };
+
+function TenantDetailTabs({
+  tenantId,
+  tenantUsers,
+  onRemoveUser,
+}: {
+  tenantId: number;
+  tenantUsers: TenantUser[];
+  onRemoveUser: (id: number, name: string) => void;
+}) {
+  const { data: csatData, isLoading: csatLoading } = trpc.megaAdmin.getTenantCsat.useQuery({ tenantId });
+
+  return (
+    <Tabs defaultValue="users">
+      <TabsList className="bg-white/5 border border-white/10 mb-4">
+        <TabsTrigger value="users" className="gap-1.5 data-[state=active]:bg-white/10 data-[state=active]:text-white text-slate-400">
+          <Users className="w-3.5 h-3.5" /> Usuários ({tenantUsers.length})
+        </TabsTrigger>
+        <TabsTrigger value="csat" className="gap-1.5 data-[state=active]:bg-white/10 data-[state=active]:text-white text-slate-400">
+          <Star className="w-3.5 h-3.5" /> CSAT / NPS
+        </TabsTrigger>
+      </TabsList>
+
+      {/* Tab: Usuários */}
+      <TabsContent value="users">
+        <Card className="bg-[#0d1526] border-white/10">
+          <CardContent className="p-0">
+            {tenantUsers.length === 0 ? (
+              <div className="p-8 text-center text-slate-500 text-sm">Nenhum usuário neste tenant.</div>
+            ) : (
+              <div className="divide-y divide-white/5">
+                {tenantUsers.map((u) => (
+                  <div key={u.id} className="flex items-center gap-4 px-6 py-3">
+                    <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500/20 to-purple-600/20 border border-white/10 flex items-center justify-center flex-shrink-0">
+                      <span className="text-xs font-bold text-blue-400">{(u.name ?? "?").charAt(0)}</span>
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-white truncate">{u.name ?? "—"}</p>
+                      <p className="text-xs text-slate-500">{u.email ?? "—"}</p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Badge className={`${PERSONA_COLORS[u.persona ?? ""] ?? "bg-white/5 text-slate-400 border-white/10"} text-xs`}>
+                        {PERSONA_LABELS[u.persona ?? ""] ?? u.persona ?? "—"}
+                      </Badge>
+                      <Badge className={u.role === "admin" ? "bg-amber-500/20 text-amber-300 border-amber-500/30 text-xs" : "bg-white/5 text-slate-500 border-white/10 text-xs"}>
+                        {u.role}
+                      </Badge>
+                    </div>
+                    <Button
+                      variant="ghost" size="sm"
+                      className="text-red-400 hover:text-red-300 hover:bg-red-500/10 h-7 px-2"
+                      onClick={() => onRemoveUser(u.id, u.name ?? "usuário")}
+                    >
+                      <UserX className="w-3.5 h-3.5" />
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </TabsContent>
+
+      {/* Tab: CSAT / NPS */}
+      <TabsContent value="csat">
+        <div className="space-y-4">
+          {/* Médias */}
+          <div className="grid grid-cols-2 gap-4">
+            <Card className="bg-[#0d1526] border-white/10">
+              <CardContent className="p-4">
+                <div className="flex items-center gap-2 mb-2">
+                  <Star className="w-4 h-4 text-amber-400" />
+                  <span className="text-xs text-slate-400">CSAT Médio</span>
+                </div>
+                {csatLoading ? (
+                  <div className="h-8 w-16 bg-white/5 rounded animate-pulse" />
+                ) : (
+                  <p className="text-2xl font-bold text-amber-400">
+                    {csatData?.avgScore != null ? `${csatData.avgScore.toFixed(1)}/10` : "—"}
+                  </p>
+                )}
+              </CardContent>
+            </Card>
+            <Card className="bg-[#0d1526] border-white/10">
+              <CardContent className="p-4">
+                <div className="flex items-center gap-2 mb-2">
+                  <BarChart3 className="w-4 h-4 text-cyan-400" />
+                  <span className="text-xs text-slate-400">NPS Médio</span>
+                </div>
+                {csatLoading ? (
+                  <div className="h-8 w-16 bg-white/5 rounded animate-pulse" />
+                ) : (
+                  <p className="text-2xl font-bold text-cyan-400">
+                    {csatData?.avgNps != null ? `${csatData.avgNps.toFixed(1)}/10` : "—"}
+                  </p>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Por Persona */}
+          {csatData?.byPersona && csatData.byPersona.length > 0 && (
+            <Card className="bg-[#0d1526] border-white/10">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-white text-sm">Satisfação por Persona</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                {csatData.byPersona.map((p) => (
+                  <div key={p.persona ?? ""} className="flex items-center gap-3">
+                    <Badge className={`${PERSONA_COLORS[p.persona ?? ""] ?? "bg-white/5 text-slate-400 border-white/10"} text-xs w-40 justify-center`}>
+                      {PERSONA_LABELS[p.persona ?? ""] ?? p.persona ?? "—"}
+                    </Badge>
+                    <div className="flex-1 h-2 bg-white/10 rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-amber-400 rounded-full"
+                        style={{ width: `${((parseFloat(String(p.avgScore ?? 0)) / 10) * 100).toFixed(0)}%` }}
+                      />
+                    </div>
+                    <span className="text-xs text-amber-300 w-10 text-right">
+                      {p.avgScore ? parseFloat(String(p.avgScore)).toFixed(1) : "—"}
+                    </span>
+                    <span className="text-xs text-slate-500 w-16 text-right">{p.count} resp.</span>
+                  </div>
+                ))}
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Histórico de respostas */}
+          <Card className="bg-[#0d1526] border-white/10">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-white text-sm flex items-center gap-2">
+                <Activity className="w-4 h-4 text-blue-400" /> Últimas Respostas
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="p-0">
+              {csatLoading ? (
+                <div className="p-4 space-y-2">{Array.from({ length: 3 }).map((_, i) => <div key={i} className="h-12 bg-white/5 rounded animate-pulse" />)}</div>
+              ) : !csatData?.responses?.length ? (
+                <div className="p-8 text-center text-slate-500 text-sm">Nenhuma resposta CSAT registrada.</div>
+              ) : (
+                <div className="divide-y divide-white/5">
+                  {csatData.responses.map((r) => (
+                    <div key={r.id} className="flex items-start gap-4 px-6 py-3">
+                      <div className="flex-shrink-0 text-center">
+                        <span className={`text-lg font-bold ${
+                          (r.score ?? 0) >= 8 ? "text-emerald-400" : (r.score ?? 0) >= 6 ? "text-amber-400" : "text-red-400"
+                        }`}>{r.score ?? "—"}</span>
+                        <p className="text-xs text-slate-500">CSAT</p>
+                      </div>
+                      {r.npsScore != null && (
+                        <div className="flex-shrink-0 text-center">
+                          <span className={`text-lg font-bold ${
+                            (r.npsScore ?? 0) >= 8 ? "text-emerald-400" : (r.npsScore ?? 0) >= 6 ? "text-amber-400" : "text-red-400"
+                          }`}>{r.npsScore}</span>
+                          <p className="text-xs text-slate-500">NPS</p>
+                        </div>
+                      )}
+                      <div className="flex-1 min-w-0">
+                        {r.feedback && <p className="text-sm text-slate-300 truncate">{r.feedback}</p>}
+                        <div className="flex items-center gap-2 mt-1">
+                          {r.persona && (
+                            <Badge className={`${PERSONA_COLORS[r.persona] ?? "bg-white/5 text-slate-400 border-white/10"} text-xs`}>
+                              {PERSONA_LABELS[r.persona] ?? r.persona}
+                            </Badge>
+                          )}
+                          <span className="text-xs text-slate-500">
+                            {new Date(r.createdAt).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "2-digit" })}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+      </TabsContent>
+    </Tabs>
+  );
+}
 
 export default function MegaAdminTenant() {
   const { user, loading: authLoading } = useAuth();
@@ -281,47 +484,8 @@ export default function MegaAdminTenant() {
           </Card>
         </div>
 
-        {/* Users Table */}
-        <Card className="bg-[#0d1526] border-white/10">
-          <CardHeader className="pb-3">
-            <CardTitle className="text-white text-sm flex items-center gap-2">
-              <Users className="w-4 h-4 text-blue-400" /> Usuários ({tenantUsers.length})
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="p-0">
-            {tenantUsers.length === 0 ? (
-              <div className="p-8 text-center text-slate-500 text-sm">Nenhum usuário neste tenant.</div>
-            ) : (
-              <div className="divide-y divide-white/5">
-                {tenantUsers.map((u) => (
-                  <div key={u.id} className="flex items-center gap-4 px-6 py-3">
-                    <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500/20 to-purple-600/20 border border-white/10 flex items-center justify-center flex-shrink-0">
-                      <span className="text-xs font-bold text-blue-400">{(u.name ?? "?").charAt(0)}</span>
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-white truncate">{u.name ?? "—"}</p>
-                      <p className="text-xs text-slate-500">{u.email ?? "—"}</p>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <Badge className="bg-white/5 text-slate-400 border-white/10 text-xs capitalize">{u.persona ?? "—"}</Badge>
-                      <Badge className={u.role === "admin" ? "bg-amber-500/20 text-amber-300 border-amber-500/30 text-xs" : "bg-white/5 text-slate-500 border-white/10 text-xs"}>
-                        {u.role}
-                      </Badge>
-                    </div>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="text-red-400 hover:text-red-300 hover:bg-red-500/10 h-7 px-2"
-                      onClick={() => setConfirmRemoveUser({ id: u.id, name: u.name ?? "usuário" })}
-                    >
-                      <UserX className="w-3.5 h-3.5" />
-                    </Button>
-                  </div>
-                ))}
-              </div>
-            )}
-          </CardContent>
-        </Card>
+        {/* Tabs: Usuários / CSAT-NPS */}
+        <TenantDetailTabs tenantId={tenantId} tenantUsers={tenantUsers} onRemoveUser={(id, name) => setConfirmRemoveUser({ id, name })} />
 
         {/* Audit notice */}
         <div className="bg-blue-500/10 border border-blue-500/20 rounded-lg p-3 flex gap-2 text-xs text-blue-300">

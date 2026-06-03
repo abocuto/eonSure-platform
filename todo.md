@@ -113,3 +113,17 @@
 - [x] Confirmação de ações destrutivas (suspender tenant, excluir usuário)
 - [x] Criar usuário mega-admin no banco via SQL
 - [x] Adicionar link para /mega-admin no EonLayout apenas para mega-admin
+
+## Mega-Admin Reestruturado (v2)
+- [x] Backend: queries de CSAT/NPS global agregado por tenant e plataforma
+- [x] Backend: query getAllPlatformUsers com dados de todos os usuários + credenciais demo
+- [x] Backend: query createTenant para criação de novo cliente pelo mega-admin
+- [x] Backend: métricas financeiras estimadas (MRR, ARR) por plano de assinatura
+- [x] Dashboard mega-admin: métricas gerenciais (MRR, ARR, CSAT médio, NPS médio, churn)
+- [x] Dashboard mega-admin: gráficos de distribuição de planos e status de tenants
+- [x] Dashboard mega-admin: tabela de tenants com CSAT/NPS por linha
+- [x] Dashboard mega-admin: botão "Novo Cliente" com modal de criação
+- [x] Página /mega-admin/users: lista de todos os usuários da plataforma com persona, role, tenant e credenciais demo
+- [x] Página /mega-admin/users: filtros por tenant, role e persona
+- [x] Detalhe do tenant: aba CSAT/NPS com histórico de respostas e médias
+- [x] Navegação mega-admin: link para /mega-admin/users no header
