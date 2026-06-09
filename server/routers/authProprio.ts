@@ -49,12 +49,18 @@ const senhaSchema = z
 
 /** Verifica código TOTP com tolerância de 1 janela (±30s) */
 function verificarCodigo(codigo: string, segredo: string): boolean {
-  for (let delta = -TOTP_WINDOW; delta <= TOTP_WINDOW; delta++) {
-    const epoch = Date.now() + delta * TOTP_OPTS.period * 1000;
-    const result = verifySync({ token: codigo, secret: segredo, ...TOTP_OPTS, epoch } as any) as any;
-    if (result && typeof result === "object" && result.valid) return true;
-    if (result === true) return true;
-  }
+  // verifySync do otplib v13 usa 'window' para tolerância de janelas adjacentes
+  // Não usar 'epoch' pois o otplib v13 o ignora quando passado junto com outros parâmetros
+  const result = verifySync({
+    token: codigo,
+    secret: segredo,
+    algorithm: TOTP_OPTS.algorithm,
+    digits: TOTP_OPTS.digits,
+    period: TOTP_OPTS.period,
+    window: TOTP_WINDOW,
+  } as any) as any;
+  if (result && typeof result === "object" && result.valid) return true;
+  if (result === true) return true;
   return false;
 }
 
