@@ -333,23 +333,24 @@ export const authProprioRouter = router({
       if (!usuario) throw new TRPCError({ code: "NOT_FOUND", message: "Usuário não encontrado" });
 
       let segredo: string;
-      if (usuario.totpSecret && !usuario.totpVerificado) {
-        // Detectar se o segredo está em texto puro (sem ':') ou já criptografado
+      if (usuario.totpSecret) {
+        // Sempre reutilizar o segredo existente — NUNCA regenerar
         if (usuario.totpSecret.includes(":")) {
           segredo = descriptografarTotpSecret(usuario.totpSecret);
         } else {
-          // Segredo em texto puro (ex: gerado pelo seed) — criptografar e salvar
+          // Segredo em texto puro (ex: gerado pelo seed) — migrar para formato criptografado
           segredo = usuario.totpSecret;
           await db
             .update(users)
-            .set({ totpSecret: criptografarTotpSecret(segredo) })
+            .set({ totpSecret: criptografarTotpSecret(segredo), totpVerificado: false })
             .where(eq(users.id, usuario.id));
         }
       } else {
+        // Apenas gerar novo segredo se não existe nenhum
         segredo = totpGenerateSecret();
         await db
           .update(users)
-          .set({ totpSecret: criptografarTotpSecret(segredo) })
+          .set({ totpSecret: criptografarTotpSecret(segredo), totpVerificado: false })
           .where(eq(users.id, usuario.id));
       }
 
@@ -390,9 +391,11 @@ export const authProprioRouter = router({
         throw new TRPCError({ code: "NOT_FOUND", message: "Usuário não encontrado" });
       }
 
-      const segredo = usuario.totpSecret.includes(":")
+      const ehCriptografado = usuario.totpSecret.includes(":");
+      const segredo = ehCriptografado
         ? descriptografarTotpSecret(usuario.totpSecret)
         : usuario.totpSecret; // texto puro (seed antigo)
+
       const valido = verificarCodigo(input.codigo, segredo);
 
       if (!valido) {
