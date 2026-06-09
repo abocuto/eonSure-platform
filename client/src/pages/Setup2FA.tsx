@@ -1,13 +1,15 @@
 /**
- * Setup2FA.tsx — Configuração do 2FA TOTP no primeiro acesso
+ * Setup2FA.tsx — Configuração do 2FA TOTP
  *
- * Exibe QR Code para escanear no app autenticador.
- * Após confirmar o código, cria sessão e redireciona.
+ * Suporta dois modos:
+ * 1. Via pendingToken (sessionStorage) — fluxo normal pós-login
+ * 2. Via sessão autenticada — para usuários já logados sem 2FA configurado
  */
 
 import { useState, useRef, useEffect } from "react";
 import { useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
+import { useAuth } from "@/_core/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -17,28 +19,62 @@ import { toast } from "sonner";
 
 export default function Setup2FA() {
   const [, setLocation] = useLocation();
+  const { user, loading: authLoading } = useAuth();
   const [etapa, setEtapa] = useState<"qr" | "confirmar">("qr");
   const [codigo, setCodigo] = useState(["", "", "", "", "", ""]);
   const [erro, setErro] = useState<string | null>(null);
   const inputRefs = useRef<(HTMLInputElement | null)[]>([]);
 
   const pendingToken = sessionStorage.getItem("eon_pending_token");
+  // Modo autenticado: usuário já tem sessão mas ainda não configurou 2FA
+  const modoAutenticado = !pendingToken && !!user;
 
   useEffect(() => {
-    if (!pendingToken) setLocation("/login");
-  }, [pendingToken, setLocation]);
+    // Só redirecionar se auth carregou e não há nem pendingToken nem sessão
+    if (!authLoading && !pendingToken && !user) {
+      setLocation("/login");
+    }
+  }, [authLoading, pendingToken, user, setLocation]);
 
-  const { data: qrData, isLoading: qrLoading } = trpc.authProprio.obterQrCode.useQuery(
+  // Modo 1: via pendingToken
+  const { data: qrDataToken, isLoading: qrLoadingToken } = trpc.authProprio.obterQrCode.useQuery(
     { pendingToken: pendingToken ?? "" },
-    { enabled: !!pendingToken, retry: false }
+    { enabled: !!pendingToken, retry: false, staleTime: Infinity }
   );
 
+  // Modo 2: via sessão autenticada
+  const { data: qrDataAuth, isLoading: qrLoadingAuth } = trpc.authProprio.obterQrCodeAutenticado.useQuery(
+    undefined,
+    { enabled: modoAutenticado, retry: false, staleTime: Infinity }
+  );
+
+  const qrData = pendingToken ? qrDataToken : qrDataAuth;
+  const qrLoading = pendingToken ? qrLoadingToken : qrLoadingAuth;
+
+  // Mutação modo 1: via pendingToken
   const confirmarMutation = trpc.authProprio.confirmarTotp.useMutation({
     onSuccess: (data) => {
       sessionStorage.removeItem("eon_pending_token");
       localStorage.setItem("eon_auth_token", data.sessaoId);
       toast.success("2FA configurado com sucesso! Bem-vindo à EonSure.");
       if (data.role === "mega_admin" || data.role === "mega-admin") {
+        setLocation("/mega-admin");
+      } else {
+        setLocation("/dashboard");
+      }
+    },
+    onError: (error) => {
+      setErro(error.message);
+      setCodigo(["", "", "", "", "", ""]);
+      inputRefs.current[0]?.focus();
+    },
+  });
+
+  // Mutação modo 2: via sessão autenticada
+  const confirmarAuthMutation = trpc.authProprio.confirmarTotpAutenticado.useMutation({
+    onSuccess: () => {
+      toast.success("2FA configurado com sucesso!");
+      if (user?.role === "mega_admin" || user?.role === "mega-admin") {
         setLocation("/mega-admin");
       } else {
         setLocation("/dashboard");
@@ -78,10 +114,16 @@ export default function Setup2FA() {
 
   const handleConfirmar = (codigoStr?: string) => {
     const codigoFinal = codigoStr ?? codigo.join("");
-    if (codigoFinal.length !== 6 || !pendingToken) return;
+    if (codigoFinal.length !== 6) return;
     setErro(null);
-    confirmarMutation.mutate({ pendingToken, codigo: codigoFinal });
+    if (pendingToken) {
+      confirmarMutation.mutate({ pendingToken, codigo: codigoFinal });
+    } else {
+      confirmarAuthMutation.mutate({ codigo: codigoFinal });
+    }
   };
+
+  const isPending = confirmarMutation.isPending || confirmarAuthMutation.isPending;
 
   const copiarOtpUrl = () => {
     if (qrData?.otpAuthUrl) {
@@ -89,6 +131,15 @@ export default function Setup2FA() {
       toast.success("URL copiada para a área de transferência");
     }
   };
+
+  // Mostrar loading enquanto auth verifica
+  if (authLoading) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-[#0A1628] via-[#0D1F3C] to-[#0A1628] flex items-center justify-center">
+        <Loader2 className="w-8 h-8 text-[#00D4FF] animate-spin" />
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-[#0A1628] via-[#0D1F3C] to-[#0A1628] flex items-center justify-center p-4">
@@ -223,10 +274,10 @@ export default function Setup2FA() {
 
                 <Button
                   onClick={() => handleConfirmar()}
-                  disabled={confirmarMutation.isPending || codigo.some((d) => !d)}
+                  disabled={isPending || codigo.some((d) => !d)}
                   className="w-full h-11 bg-gradient-to-r from-[#00D4FF] to-[#0099CC] hover:from-[#00B8E0] hover:to-[#0088BB] text-white font-semibold"
                 >
-                  {confirmarMutation.isPending ? (
+                  {isPending ? (
                     <>
                       <Loader2 className="w-4 h-4 mr-2 animate-spin" />
                       Confirmando...

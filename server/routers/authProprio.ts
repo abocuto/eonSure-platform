@@ -234,6 +234,83 @@ export const authProprioRouter = router({
     }),
 
   /**
+   * Obtém QR Code TOTP para usuário já autenticado (sem pendingToken).
+   * Usado quando o usuário tem sessão mas ainda não configurou o 2FA.
+   */
+  obterQrCodeAutenticado: protectedProcedure
+    .query(async ({ ctx }) => {
+      const dbConn = await getDb();
+      if (!dbConn) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Banco de dados indisponível" });
+      const db = dbConn;
+      const [usuario] = await db
+        .select()
+        .from(users)
+        .where(eq(users.id, ctx.user.id))
+        .limit(1);
+
+      if (!usuario) throw new TRPCError({ code: "NOT_FOUND", message: "Usuário não encontrado" });
+
+      let segredo: string;
+      if (usuario.totpSecret) {
+        // Reusar segredo existente — não regenerar
+        if (usuario.totpSecret.includes(":")) {
+          segredo = descriptografarTotpSecret(usuario.totpSecret);
+        } else {
+          segredo = usuario.totpSecret;
+          // Migrar para formato criptografado
+          await db.update(users).set({ totpSecret: criptografarTotpSecret(segredo) }).where(eq(users.id, usuario.id));
+        }
+      } else {
+        segredo = totpGenerateSecret();
+        await db.update(users).set({ totpSecret: criptografarTotpSecret(segredo) }).where(eq(users.id, usuario.id));
+      }
+
+      const email = usuario.email ?? `usuario-${usuario.id}@eonsure.ai`;
+      const otpAuthUrl = `otpauth://totp/EonSure:${encodeURIComponent(email)}?secret=${segredo}&issuer=EonSure&algorithm=SHA1&digits=6&period=30`;
+      const qrCodeDataUrl = await QRCode.toDataURL(otpAuthUrl);
+      return { qrCode: qrCodeDataUrl, otpAuthUrl, segredo };
+    }),
+
+  /**
+   * Confirma TOTP para usuário já autenticado (sem pendingToken).
+   */
+  confirmarTotpAutenticado: protectedProcedure
+    .input(z.object({ codigo: z.string().length(6, "Código deve ter 6 dígitos") }))
+    .mutation(async ({ input, ctx }) => {
+      const dbConn = await getDb();
+      if (!dbConn) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Banco de dados indisponível" });
+      const db = dbConn;
+      const [usuario] = await db
+        .select()
+        .from(users)
+        .where(eq(users.id, ctx.user.id))
+        .limit(1);
+
+      if (!usuario || !usuario.totpSecret) {
+        throw new TRPCError({ code: "NOT_FOUND", message: "Usuário não encontrado" });
+      }
+
+      const segredo = usuario.totpSecret.includes(":")
+        ? descriptografarTotpSecret(usuario.totpSecret)
+        : usuario.totpSecret;
+      const valido = verificarCodigo(input.codigo, segredo);
+
+      if (!valido) {
+        throw new TRPCError({
+          code: "UNAUTHORIZED",
+          message: "Código inválido. Verifique o app autenticador e tente novamente.",
+        });
+      }
+
+      await db
+        .update(users)
+        .set({ totpVerificado: true, totpAtivoEm: new Date() })
+        .where(eq(users.id, usuario.id));
+
+      return { ok: true };
+    }),
+
+  /**
    * Obtém QR Code TOTP para setup no primeiro acesso.
    */
   obterQrCode: publicProcedure
