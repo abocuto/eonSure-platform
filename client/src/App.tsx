@@ -23,11 +23,21 @@ import MegaAdminTenant from "./pages/MegaAdminTenant";
 import MegaAdminAuditLog from "./pages/MegaAdminAuditLog";
 import MegaAdminUsers from "./pages/MegaAdminUsers";
 import EonLayout from "./components/EonLayout";
+import Login from "./pages/Login";
+import LoginVerificar2FA from "./pages/LoginVerificar2FA";
+import Setup2FA from "./pages/Setup2FA";
+import Convite from "./pages/Convite";
 
 function Router() {
   return (
     <Switch>
       <Route path="/" component={Home} />
+
+      {/* Auth próprio */}
+      <Route path="/login" component={Login} />
+      <Route path="/login/verificar-2fa" component={LoginVerificar2FA} />
+      <Route path="/setup-2fa" component={Setup2FA} />
+      <Route path="/convite/:token" component={Convite} />
 
       <Route path="/dashboard">
         <ProtectedRoute path="/dashboard">

@@ -17,7 +17,18 @@ export const users = mysqlTable("users", {
   name: text("name"),
   email: varchar("email", { length: 320 }),
   loginMethod: varchar("loginMethod", { length: 64 }),
-  role: mysqlEnum("role", ["user", "admin", "mega-admin"]).default("user").notNull(),
+  // Roles atualizados: 4 níveis + trial_user + legados para compatibilidade
+  role: mysqlEnum("role", [
+    "mega_admin",
+    "tenant_admin",
+    "tenant_member",
+    "field_agent",
+    "trial_user",
+    // Legados — mantidos para compatibilidade com fluxo Manus OAuth existente
+    "user",
+    "admin",
+    "mega-admin",
+  ]).default("user").notNull(),
   persona: mysqlEnum("persona", [
     "c-level",
     "gerente-sinistros",
@@ -27,6 +38,18 @@ export const users = mysqlTable("users", {
   ]).default("perito"),
   tenantId: int("tenantId"),
   isActive: boolean("isActive").default(true).notNull(),
+  // ── Campos de auth próprio (adicionados na migração v2) ──────────────────
+  passwordHash: varchar("passwordHash", { length: 255 }),
+  totpSecret: varchar("totpSecret", { length: 255 }),       // AES-256 criptografado
+  totpVerificado: boolean("totpVerificado").default(false).notNull(),
+  totpAtivoEm: timestamp("totpAtivoEm"),
+  ultimoLoginEm: timestamp("ultimoLoginEm"),
+  tentativasLoginFalhadas: int("tentativasLoginFalhadas").default(0).notNull(),
+  bloqueadoAte: timestamp("bloqueadoAte"),
+  convidadoPor: int("convidadoPor"),                        // FK self-reference
+  convidadoEm: timestamp("convidadoEm"),
+  trialExpiraEm: timestamp("trialExpiraEm"),                // só para trial_user
+  // ─────────────────────────────────────────────────────────────────────────
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
   lastSignedIn: timestamp("lastSignedIn").defaultNow().notNull(),
@@ -34,6 +57,35 @@ export const users = mysqlTable("users", {
 
 export type User = typeof users.$inferSelect;
 export type InsertUser = typeof users.$inferInsert;
+
+// ─── Sessoes (substituindo Manus session) ─────────────────────────────────────
+export const sessoes = mysqlTable("sessoes", {
+  id: varchar("id", { length: 128 }).primaryKey(),          // JWT ou UUID
+  userId: int("user_id").notNull(),
+  ipOrigem: varchar("ip_origem", { length: 45 }),
+  userAgent: text("user_agent"),
+  expiresAt: timestamp("expires_at").notNull(),
+  criadaEm: timestamp("criada_em").defaultNow().notNull(),
+});
+
+export type Sessao = typeof sessoes.$inferSelect;
+export type InsertSessao = typeof sessoes.$inferInsert;
+
+// ─── Convites ─────────────────────────────────────────────────────────────────
+export const convites = mysqlTable("convites", {
+  id: int("id").autoincrement().primaryKey(),
+  tenantId: int("tenant_id").notNull(),
+  email: varchar("email", { length: 320 }).notNull(),
+  role: mysqlEnum("role", ["tenant_admin", "tenant_member", "field_agent"]).notNull(),
+  token: varchar("token", { length: 128 }).notNull().unique(),
+  convidadoPorId: int("convidado_por_id").notNull(),
+  usadoEm: timestamp("usado_em"),
+  expiraEm: timestamp("expira_em").notNull(),
+  criadoEm: timestamp("criado_em").defaultNow().notNull(),
+});
+
+export type Convite = typeof convites.$inferSelect;
+export type InsertConvite = typeof convites.$inferInsert;
 
 // ─── Tenants ─────────────────────────────────────────────────────────────────
 export const tenants = mysqlTable("tenants", {
@@ -55,6 +107,10 @@ export const tenants = mysqlTable("tenants", {
   pillarPredictive: boolean("pillarPredictive").default(false).notNull(),
   subscriptionPlan: mysqlEnum("subscriptionPlan", ["starter", "professional", "enterprise"]).default("starter").notNull(),
   isActive: boolean("isActive").default(true).notNull(),
+  // Status do tenant (alinhado com o prompt de migração)
+  status: mysqlEnum("status", ["trial", "active", "suspended", "cancelled"]).default("trial").notNull(),
+  trialExpiraEm: timestamp("trialExpiraEm"),
+  cnpj: varchar("cnpj", { length: 18 }),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
@@ -279,25 +335,20 @@ export const subscriptions = mysqlTable("subscriptions", {
 export type Subscription = typeof subscriptions.$inferSelect;
 export type InsertSubscription = typeof subscriptions.$inferInsert;
 
-// ─── Audit Logs (Mega-Admin) ────────────────────────────────────────────────────────────────────────────────────────
+// ─── Audit Logs (Mega-Admin) ──────────────────────────────────────────────────
 export const auditLogs = mysqlTable("audit_logs", {
   id: int("id").autoincrement().primaryKey(),
-  // Who performed the action
   adminId: int("adminId").notNull(),
   adminName: varchar("adminName", { length: 256 }),
   adminEmail: varchar("adminEmail", { length: 320 }),
-  // What action was performed
-  action: varchar("action", { length: 128 }).notNull(), // e.g. "tenant.suspend", "user.delete"
-  resource: varchar("resource", { length: 64 }).notNull(), // e.g. "tenant", "user", "subscription"
+  action: varchar("action", { length: 128 }).notNull(),
+  resource: varchar("resource", { length: 64 }).notNull(),
   resourceId: int("resourceId"),
   resourceName: varchar("resourceName", { length: 256 }),
-  // Context
   targetTenantId: int("targetTenantId"),
   targetTenantName: varchar("targetTenantName", { length: 256 }),
-  // Before/after state for reversibility
   previousState: json("previousState"),
   newState: json("newState"),
-  // Request metadata for security
   ipAddress: varchar("ipAddress", { length: 64 }),
   userAgent: text("userAgent"),
   severity: mysqlEnum("severity", ["info", "warning", "critical"]).default("info").notNull(),

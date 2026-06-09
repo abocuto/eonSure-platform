@@ -26,6 +26,7 @@ import { TRPCError } from "@trpc/server";
 import { requirePermission, requireMegaAdmin } from "./_core/rbac";
 import { megaAdminRouter } from "./routers/megaAdmin";
 import { tenantUsersRouter } from "./routers/tenantUsers";
+import { authProprioRouter } from "./routers/authProprio";
 import { analyzeFraudWithAI, generatePredictionWithAI } from "./_core/aiService";
 import { eventBus } from "./_core/eventBus";
 
@@ -38,6 +39,7 @@ export const appRouter = router({
   system: systemRouter,
   megaAdmin: megaAdminRouter,
   tenantUsers: tenantUsersRouter,
+  authProprio: authProprioRouter,
 
   // ─── Auth ──────────────────────────────────────────────────────────────────
   auth: router({
