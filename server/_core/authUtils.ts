@@ -126,9 +126,9 @@ export function validarPendingToken(token: string): number | null {
       .update(payload)
       .digest("hex");
     if (hmac !== expectedHmac) return null;
-    // Expira em 5 minutos
+    // Expira em 15 minutos
     const age = Date.now() - parseInt(timestampStr, 10);
-    if (age > 5 * 60 * 1000) return null;
+    if (age > 15 * 60 * 1000) return null;
     return parseInt(userIdStr, 10);
   } catch {
     return null;

@@ -196,7 +196,9 @@ export const authProprioRouter = router({
         throw new TRPCError({ code: "NOT_FOUND", message: "Usuário não encontrado" });
       }
 
-      const segredo = descriptografarTotpSecret(usuario.totpSecret);
+      const segredo = usuario.totpSecret.includes(":")
+        ? descriptografarTotpSecret(usuario.totpSecret)
+        : usuario.totpSecret; // texto puro (seed antigo)
       const valido = verificarCodigo(input.codigo, segredo);
 
       if (!valido) {
@@ -249,7 +251,17 @@ export const authProprioRouter = router({
 
       let segredo: string;
       if (usuario.totpSecret && !usuario.totpVerificado) {
-        segredo = descriptografarTotpSecret(usuario.totpSecret);
+        // Detectar se o segredo está em texto puro (sem ':') ou já criptografado
+        if (usuario.totpSecret.includes(":")) {
+          segredo = descriptografarTotpSecret(usuario.totpSecret);
+        } else {
+          // Segredo em texto puro (ex: gerado pelo seed) — criptografar e salvar
+          segredo = usuario.totpSecret;
+          await db
+            .update(users)
+            .set({ totpSecret: criptografarTotpSecret(segredo) })
+            .where(eq(users.id, usuario.id));
+        }
       } else {
         segredo = totpGenerateSecret();
         await db
@@ -295,7 +307,9 @@ export const authProprioRouter = router({
         throw new TRPCError({ code: "NOT_FOUND", message: "Usuário não encontrado" });
       }
 
-      const segredo = descriptografarTotpSecret(usuario.totpSecret);
+      const segredo = usuario.totpSecret.includes(":")
+        ? descriptografarTotpSecret(usuario.totpSecret)
+        : usuario.totpSecret; // texto puro (seed antigo)
       const valido = verificarCodigo(input.codigo, segredo);
 
       if (!valido) {
