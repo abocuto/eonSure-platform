@@ -218,15 +218,23 @@ export default function Setup2FA() {
                   </ol>
                 </div>
 
-                {/* Copiar URL manual */}
-                {qrData?.otpAuthUrl && (
-                  <button
-                    onClick={copiarOtpUrl}
-                    className="flex items-center gap-2 text-xs text-[#4A6080] hover:text-[#8BA3C7] transition-colors mx-auto"
-                  >
-                    <Copy className="w-3 h-3" />
-                    Não consegue escanear? Copiar URL para configuração manual
-                  </button>
+                {/* Segredo manual */}
+                {qrData?.segredo && (
+                  <div className="bg-[#0A1628] rounded-lg p-3 border border-[#1E3A5F]">
+                    <p className="text-xs text-[#8BA3C7] font-medium mb-2 text-center">Ou insira o código manualmente:</p>
+                    <div className="flex items-center justify-center gap-2">
+                      <code className="text-[#00D4FF] text-sm font-mono tracking-widest">
+                        {(qrData.segredo.match(/.{1,4}/g) ?? []).join(' ')}
+                      </code>
+                      <button
+                        onClick={() => { navigator.clipboard.writeText(qrData.segredo!); toast.success("Segredo copiado!"); }}
+                        className="text-[#4A6080] hover:text-[#8BA3C7] transition-colors"
+                      >
+                        <Copy className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                    <p className="text-xs text-[#4A6080] text-center mt-1">Tipo: TOTP • SHA1 • 6 dígitos • 30s</p>
+                  </div>
                 )}
 
                 <Button

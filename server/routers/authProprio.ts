@@ -13,7 +13,7 @@
 
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
-import { generateSync, verifySync, generateSecret as totpGenerateSecret } from "otplib";
+import { generateSync, verifySync } from "otplib";
 import QRCode from "qrcode";
 import { eq, and, gt } from "drizzle-orm";
 import { getDb } from "../db";
@@ -24,6 +24,7 @@ import {
   verificarSenha,
   criptografarTotpSecret,
   descriptografarTotpSecret,
+  gerarSegredoTotp,
   gerarIdSessao,
   gerarPendingToken,
   validarPendingToken,
@@ -261,7 +262,7 @@ export const authProprioRouter = router({
           await db.update(users).set({ totpSecret: criptografarTotpSecret(segredo) }).where(eq(users.id, usuario.id));
         }
       } else {
-        segredo = totpGenerateSecret();
+        segredo = gerarSegredoTotp();
         await db.update(users).set({ totpSecret: criptografarTotpSecret(segredo) }).where(eq(users.id, usuario.id));
       }
 
@@ -347,7 +348,7 @@ export const authProprioRouter = router({
         }
       } else {
         // Apenas gerar novo segredo se não existe nenhum
-        segredo = totpGenerateSecret();
+        segredo = gerarSegredoTotp();
         await db
           .update(users)
           .set({ totpSecret: criptografarTotpSecret(segredo), totpVerificado: false })
@@ -359,7 +360,7 @@ export const authProprioRouter = router({
       const otpAuthUrl = `otpauth://totp/EonSure:${encodeURIComponent(email)}?secret=${segredo}&issuer=EonSure&algorithm=SHA1&digits=6&period=30`;
       const qrCodeDataUrl = await QRCode.toDataURL(otpAuthUrl);
 
-      return { qrCode: qrCodeDataUrl, otpAuthUrl };
+      return { qrCode: qrCodeDataUrl, otpAuthUrl, segredo };
     }),
 
   /**
@@ -465,7 +466,7 @@ export const authProprioRouter = router({
       }
 
       const passwordHash = await hashSenha(input.senha);
-      const totpSegredo = totpGenerateSecret();
+      const totpSegredo = gerarSegredoTotp();
       const totpSecretEncriptado = criptografarTotpSecret(totpSegredo);
       const openId = `tenant-${convite.tenantId}-${Date.now()}`;
 

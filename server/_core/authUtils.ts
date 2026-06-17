@@ -3,16 +3,25 @@
  *
  * Responsabilidades:
  * - Hash e verificação de senhas com bcrypt (custo 12)
- * - Criptografia/descriptografia de segredos TOTP com AES-256
- * - Geração e validação de tokens de convite
- * - Validação de força de senha
+ * - Criptografia/descriptografia de segredos TOTP com AES-256-CBC
+ * - Geração de segredos TOTP usando authenticator.generateSecret (Base32 limpo)
+ * - Geração e validação de tokens de convite e pending tokens
  */
 
 import bcrypt from "bcryptjs";
 import crypto from "crypto";
-import { ENV } from "./env";
+import { generateSecret } from "otplib";
 
 const BCRYPT_ROUNDS = 12;
+
+// ─── Chave de criptografia AES-256 ───────────────────────────────────────────
+// Usa TOTP_ENCRYPTION_KEY se disponível (deve ter exatamente 32 chars),
+// caso contrário deriva 32 bytes do JWT_SECRET via SHA-256.
+function getChaveCripto(): Buffer {
+  const rawKey = process.env.TOTP_ENCRYPTION_KEY ?? process.env.JWT_SECRET ?? "fallback-key-must-be-replaced-now";
+  // Sempre derivar via SHA-256 para garantir exatamente 32 bytes (256 bits)
+  return crypto.createHash("sha256").update(rawKey, "utf8").digest();
+}
 
 // ─── Senhas ───────────────────────────────────────────────────────────────────
 
@@ -31,11 +40,7 @@ export async function verificarSenha(senha: string, hash: string): Promise<boole
 }
 
 /**
- * Valida os requisitos de força de senha:
- * - Mínimo 10 caracteres
- * - Pelo menos 1 letra maiúscula
- * - Pelo menos 1 número
- * - Pelo menos 1 caractere especial
+ * Valida os requisitos de força de senha.
  */
 export function validarForcaSenha(senha: string): { valida: boolean; erros: string[] } {
   const erros: string[] = [];
@@ -46,36 +51,48 @@ export function validarForcaSenha(senha: string): { valida: boolean; erros: stri
   return { valida: erros.length === 0, erros };
 }
 
+// ─── Segredo TOTP ─────────────────────────────────────────────────────────────
+
+/**
+ * Gera um segredo TOTP Base32 limpo usando o authenticator do otplib.
+ * Retorna string Base32 de 32 chars (A-Z, 2-7), sem padding, sem espaços.
+ */
+export function gerarSegredoTotp(): string {
+  // generateSecret(20) retorna Base32 limpo — compatível com
+  // Google Authenticator, Authy e qualquer app TOTP padrão RFC 6238
+  return generateSecret();
+}
+
 // ─── Criptografia TOTP ────────────────────────────────────────────────────────
 
 /**
- * Chave de criptografia derivada do JWT_SECRET (32 bytes para AES-256).
- * Decisão arquitetural: usa JWT_SECRET como base para não exigir nova ENV
- * em ambientes existentes. Em produção, TOTP_ENCRYPTION_KEY deve ser definida.
- */
-function getChaveCripto(): Buffer {
-  const chave = process.env.TOTP_ENCRYPTION_KEY ?? ENV.cookieSecret;
-  return crypto.createHash("sha256").update(chave).digest();
-}
-
-/**
  * Criptografa o segredo TOTP com AES-256-CBC antes de salvar no banco.
+ * Formato de saída: "iv_hex:encrypted_hex"
  */
 export function criptografarTotpSecret(segredo: string): string {
   const iv = crypto.randomBytes(16);
-  const cipher = crypto.createCipheriv("aes-256-cbc", getChaveCripto(), iv);
+  const key = getChaveCripto(); // sempre 32 bytes
+  const cipher = crypto.createCipheriv("aes-256-cbc", key, iv);
   const encrypted = Buffer.concat([cipher.update(segredo, "utf8"), cipher.final()]);
   return `${iv.toString("hex")}:${encrypted.toString("hex")}`;
 }
 
 /**
  * Descriptografa o segredo TOTP armazenado no banco.
+ * Aceita formato "iv_hex:encrypted_hex".
  */
 export function descriptografarTotpSecret(encriptado: string): string {
-  const [ivHex, encHex] = encriptado.split(":");
+  const colonIndex = encriptado.indexOf(":");
+  if (colonIndex === -1) {
+    // Segredo em texto puro (legado/seed antigo) — retornar como está
+    return encriptado;
+  }
+  const ivHex = encriptado.substring(0, colonIndex);
+  const encHex = encriptado.substring(colonIndex + 1);
   const iv = Buffer.from(ivHex, "hex");
   const enc = Buffer.from(encHex, "hex");
-  const decipher = crypto.createDecipheriv("aes-256-cbc", getChaveCripto(), iv);
+  const key = getChaveCripto();
+  const decipher = crypto.createDecipheriv("aes-256-cbc", key, iv);
   return Buffer.concat([decipher.update(enc), decipher.final()]).toString("utf8");
 }
 
@@ -98,8 +115,8 @@ export function gerarIdSessao(): string {
 // ─── Pending Token (aguarda TOTP) ─────────────────────────────────────────────
 
 /**
- * Gera um token temporário de "aguardando TOTP" — válido por 5 minutos.
- * Formato: base64(userId:timestamp:hmac)
+ * Gera um token temporário de "aguardando TOTP" — válido por 15 minutos.
+ * Formato: base64url(userId:timestamp:hmac)
  */
 export function gerarPendingToken(userId: number): string {
   const payload = `${userId}:${Date.now()}`;
@@ -112,7 +129,7 @@ export function gerarPendingToken(userId: number): string {
 
 /**
  * Valida e extrai o userId de um pending token.
- * Retorna null se inválido ou expirado (5 minutos).
+ * Retorna null se inválido ou expirado (15 minutos).
  */
 export function validarPendingToken(token: string): number | null {
   try {
